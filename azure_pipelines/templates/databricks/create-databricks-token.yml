@@ -1,0 +1,110 @@
+parameters:
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+  - name: databricksWorkspaceName
+    displayName: Docker image names with tags
+    type: string
+  - name: resourceGroupName
+    displayName: Resource group name
+    type: string
+  - name: lifetimeSeconds
+    displayName: Lifetime in seconds
+    type: number
+    default: 31536000 #one year
+  - name: databricksWorkspaceUrl
+    displayName: Databricks workspace url
+    type: string
+  - name: dbwSpClientId
+    displayName: Service principal client id
+    type: string
+  - name: dbwSpClientSecret
+    displayName: Service principal client secret
+    type: string
+  - name: comment
+    displayName: Comment
+    type: string
+    default: "Pat_token_creation"
+  - name: workingDirectory
+    displayName: Azure CLI working directory
+    type: string
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+
+steps:
+  #Databricks extention part will be refactored in future, for now code duclication is used
+  - task: AzureCLI@2
+    displayName: Databricks extension
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        echo "Installing databricks extensions"
+        az extension add --name databricks
+        echo "done"
+
+  - template: /azure_pipelines/templates/python/pip-install-package.yml
+    parameters:
+      commandArgs: '--upgrade requests'
+
+
+  - task: AzureCLI@2
+    displayName: Service principal token creation
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      addSpnToEnvironment: true
+      inlineScript: |
+          echo "Getting current subscription ID..."
+          subscriptionID=$(az account show --query "id" -o tsv)
+          echo "Subscription ID - $subscriptionID"
+
+          echo "Login as service principal"
+          az login \
+          --service-principal \
+          -t $tenantId \
+          -u ${{ parameters.dbwSpClientId }} \
+          -p ${{ parameters.dbwSpClientSecret }}
+          echo "done"
+          
+          echo "Getting databricks token"
+          databricksToken=$(az account get-access-token --resource 2ff814a6-3304-4ab8-85cb-cd0e6f879c1d --query "accessToken" --output tsv)
+          if [[ $? -ne 0 ]]; then
+            echo "##vso[task.logissue type=error;]error retrieving the token"
+            exit 1
+          fi
+          echo "done"
+
+          echo "Getting databricks workspace url"
+          workspaceURL=$(echo "https://$(az databricks workspace show --subscription $subscriptionID --resource-group ${{ parameters.resourceGroupName }} --name ${{ parameters.databricksWorkspaceName }} --query workspaceUrl)" | tr -d '"')
+          if [[ $? -ne 0 ]]; then
+            echo "##vso[task.logissue type=error;]error retrieving the workspace"
+            exit 1
+          fi
+          echo "done"
+
+          echo "Creating databricks login file"
+          echo -e "[DEFAULT]\nhost = $workspaceURL \ntoken = $databricksToken" > ~/.databrickscfg
+          echo "done"
+
+          echo "Creating databricks token"
+          token_output=$(databricks tokens create --lifetime-seconds ${{ parameters.lifetimeSeconds }} --comment ${{ parameters.comment }})
+          if [[ $? -ne 0 ]]; then
+            echo "$token_output"
+            echo "##vso[task.logissue type=error;]error creating the token"
+            exit 1
+          fi
+          echo "done"
+
+          token_id_output=$(echo "$token_output" | jq -r '.token_info.token_id')
+          echo "New token Id: $token_id_output"
+          echo "##vso[task.setvariable variable=spn_token_value_env;isSecret=true]$(echo "$token_output" | jq -r '.token_value')"
+          echo "##vso[task.setvariable variable=spn_token_id_env]$token_id_output"
+          echo "##vso[task.setvariable variable=spn_token_id_output;isOutput=true]$token_id_output"
+      workingDirectory: ${{ parameters.workingDirectory }}

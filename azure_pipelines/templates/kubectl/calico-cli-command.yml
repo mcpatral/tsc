@@ -1,0 +1,28 @@
+parameters:
+  - name: command
+    displayName: Command to execute
+    type: string
+  - name: args
+    displayName: Arguments to pass to command
+    type: string
+  - name: namespace
+    displayName: Namespace to install templates
+    type: string
+    default: calico-system
+  - name: workingDirectory
+    displayName: Azure CLI working directory
+    type: string
+
+steps:
+  - template: check-connectivity.yml
+    parameters:
+      workingDirectory: ${{ parameters.workingDirectory }}
+
+  - task: Bash@3
+    displayName: Running Kubectl Calico command
+    inputs:
+      targetType: 'inline'
+      script: |
+        kubectl config set-context --current --namespace=${{ parameters.namespace }}
+        kubectl calico ${{ parameters.command }} ${{ parameters.args }}
+      workingDirectory: ${{ parameters.workingDirectory }}

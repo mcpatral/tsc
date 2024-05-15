@@ -1,0 +1,36 @@
+parameters:
+  - name: resourceId
+    displayName: Resource Id
+    type: string
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+  - name: workingDirectory
+    displayName: Azure CLI working directory
+    type: string
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+
+steps:
+  - task: AzureCLI@2
+    name: resourceTags
+    displayName: Get the tags of a resource
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        echo "Getting the tags of the resource with id ${{ parameters.resourceId }}"
+        resource_tags=$(az tag list --resource-id ${{ parameters.resourceId }} --query 'properties.tags' | jq -r 'to_entries | map("\(.key)=\(.value)") | join(" ")')
+        if [[ $? -ne 0 ]]; then
+          echo "##vso[task.logissue type=error;]the previous resource may not exist"
+          exit 1
+        fi
+
+        echo $resource_tags
+        echo "##vso[task.setvariable variable=resource_tags]$resource_tags"
+      workingDirectory: ${{ parameters.workingDirectory }}

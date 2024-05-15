@@ -1,0 +1,16 @@
+parameters:
+  - name: workingDirectory
+    displayName: Docker working directory
+    type: string
+  - name: name
+    displayName: Deployment name
+    type: string      
+
+steps:
+    - task: Bash@3
+      displayName: Docker agent removal
+      inputs:
+        targetType: 'inline'
+        script: |
+          docker buildx rm ${{ parameters.name }}
+        workingDirectory: ${{ parameters.workingDirectory }}

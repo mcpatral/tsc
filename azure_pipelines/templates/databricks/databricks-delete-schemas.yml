@@ -1,0 +1,29 @@
+parameters:
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+  - name: catalogName
+    displayName: Databricks catalog name
+    type: string
+  - name: schemaCommaSeparated
+    displayName: Databricks schemas comma separated
+    type: string
+    
+steps:
+  - task: AzureCLI@2
+    displayName: 'Unity Catalog: Delete schema ${{ parameters.schemaCommaSeparated }}'
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        IFS=', ' read -ra schemas <<< "${{ parameters.schemaCommaSeparated }}"
+        for schema in "${schemas[@]}"; do
+          echo "============ Deleting databricks schema $schema... =============="
+          databricks schemas delete "${{ parameters.catalogName }}.$schema"
+          if [[ $? -ne 0 ]]; then
+            echo "##vso[task.logissue type=error;]Unable to delete schema ${{ parameters.catalogName }}.$schema. The provided schema is not empty. Please ensure the schema is empty before attempting to delete it, or check your permissions to perform this operation. If the schema does not exist, verify the correctness of the schema name and try again."
+          else
+            echo "schema $schema deleted successfully."
+          fi
+        done

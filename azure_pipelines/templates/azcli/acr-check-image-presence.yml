@@ -1,0 +1,39 @@
+parameters:
+  - name: azureServiceConnectionName
+    displayName: Source ACR Azure Service Connection name
+    type: string
+  - name: acrName
+    displayName: Azure Container registry name
+    type: string
+  - name: acrImage
+    displayName: Azure Container repositoryName:repositoryVersion
+    type: string
+
+steps:
+  - task: AzureCLI@2
+    displayName: Check the presence of an ACR image
+    name: check_acr_image_presence
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      arguments: '${{ parameters.acrName }} ${{ parameters.acrImage }}'
+      inlineScript: |
+        command_output=$(az acr repository show -n $1 --image $2)
+        exit_status=$?
+        version=$(echo $2 | awk -F ':' '{print $NF}')
+        if [[ $exit_status == 1 ]]; then
+          echo "##vso[task.logissue type=error;]No access to the registry $1"
+          exit 1
+        elif [[ $exit_status == 3 ]]; then
+          echo "The image $2 is not present in acr $1"
+          echo "##vso[task.setvariable variable=create_image_env]yes"
+          echo "##vso[task.setvariable variable=create_image_output;isOutput=true]yes"
+        elif [[ $exit_status == 0 && $command_output == *"$version"* ]]; then
+          echo "##vso[task.setvariable variable=create_image_env]no"
+          echo "##vso[task.setvariable variable=create_image_output;isOutput=true]no"
+          echo "##vso[task.logissue type=warning;]provision_enablers: The image $2 is already present in the registry $1."
+        else
+          echo "##vso[task.logissue type=error;]Some other error related to ACR $1 and image $2, please review and change the code from the file acr-check-image-presence.yml."
+          exit 1
+        fi

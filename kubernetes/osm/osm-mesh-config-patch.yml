@@ -1,0 +1,12 @@
+spec:
+  traffic:
+    enablePermissiveTrafficPolicyMode: false
+    enableEgress: false
+    outboundIPRangeExclusionList:
+      - "10.0.0.1/32"
+    inboundPortExclusionList:
+      - 6432
+    outboundPortExclusionList:
+      - 5432
+      # - 5433
+      - 6432      

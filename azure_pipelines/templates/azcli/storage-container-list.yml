@@ -1,0 +1,25 @@
+parameters:
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+  - name: saName
+    displayName: storage account name
+    type: object
+    default: []
+
+steps:
+  - task: AzureCLI@2
+    displayName: List containers in storage account
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        echo "Listing containers in storage account ${{ parameters.saName }} ..."
+        container_names=$(az storage container list --account-name ${{ parameters.saName }} --query "[].name" --output tsv --auth-mode login | awk 'NF{print $0","}' | tr -d '\n' | sed 's/,$//')
+        if [[ $? -ne 0 ]]; then
+            echo "##vso[task.logissue type=error;]Unable to list storage container $container_names in $container_names. An unexpected error occurred during the deletion process. Please ensure that you have the necessary permissions, verify the existence of the blobs, and try again. If the issue persists, contact support for assistance."
+            exit 1
+        fi
+        echo "$container_names"
+        echo "##vso[task.setvariable variable=container_names_env]$container_names"

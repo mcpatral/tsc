@@ -1,0 +1,41 @@
+parameters:
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+
+  - name: artifactsDirectoryPath
+    displayName: Local path for libraries
+    type: string
+
+  - name: packageAndVersion
+    displayName: packageAndVersion, example package==version
+    type: string    
+
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+
+steps:
+  - task: AzureCLI@2
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    displayName: 'Preparing libraries'
+    inputs:
+      azureSubscription: '${{ parameters.azureServiceConnectionName }}'
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        mkdir -p ${{ parameters.artifactsDirectoryPath }}        
+        echo "Downloading file: ${{ parameters.packageAndVersion }}"
+        echo "=============================================================================="
+        command_output=$(python3 -m pip wheel ${{ parameters.packageAndVersion }} -w ${{ parameters.artifactsDirectoryPath }}  )
+        
+        echo "$command_output"
+        # ------------ TODO: review errors ------------
+        if [[ $command_output == *"Error"* ]]; then
+          exit 1
+        fi
+      workingDirectory: '$(System.DefaultWorkingDirectory)'
+    env:
+      AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)

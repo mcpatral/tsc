@@ -1,0 +1,252 @@
+parameters:
+  - name: azureServiceConnectionName
+    type: string
+  - name: terraformVersion
+    type: string
+  - name: terraformResourceGroupName
+    type: string
+  - name: terraformSaName
+    type: string
+  - name: terraformBackendContainerName
+    type: string
+  - name: kubectlVersion
+    type: string
+  - name: helmVersion
+    type: string
+  - name: calicoVersion
+    displayName: Calico CLI version to install
+    type: string
+  - name: calicoNamespace
+    displayName: Calico Namespace name
+    type: string
+  - name: osmVersion
+    displayName: Open Service Mesh CLI version to install
+    type: string
+  - name: osmNamespace
+    displayName: Open Service Mesh Namespace name
+    type: string
+  - name: ingressNamespace
+    displayName: Ingress Controller Namespace name
+    type: string
+  - name: ingressHelmReleaseName
+    displayName: Ingress Controller Helm Release name
+    type: string
+  - name: ingressClientCertSecretName
+    displayName: Ingress Controller Client certificate secret name
+    type: string
+  - name: pool
+    type: string
+  - name: dependsOn
+    type: object
+    default: []
+  - name: condition
+    displayName: Condition to run the stage
+    type: string
+    default: ""
+  - name: saPublicAccessUpdate
+    displayName: Storage Account Public Access Update
+    type: boolean
+  - name: keyVaultName
+    displayName: Key vault name
+    type: string
+    default: ""    
+  - name: keyVaultSecretNames
+    displayName: Key vault secret names
+    type: object
+    default: []    
+  - name: enablersModule
+    displayName: Enablers module name
+    type: string
+  - name: infrastructureModule
+    displayName: Infrastructure module name
+    type: string
+  - name: ingressVersion
+    displayName: Ingress version to deploy
+    type: string 
+  - name: kubeWebhookCertgenVersion
+    displayName: Kube Webhook Certgen version to deploy
+    type: string
+  - name: environmentName
+    displayName: Environment name
+    type: string
+
+stages:
+- stage: provision_infrastructure
+  displayName: Infrastructure provisioning
+  dependsOn: ${{ parameters.dependsOn }}
+  ${{ if ne(parameters.condition, '') }}:
+    condition: ${{ parameters.condition }}
+  jobs:
+  - job: main_cluster_setup
+    displayName: Main cluster setup
+    pool:
+      ${{ if ne(parameters['pool'], 'ubuntu-latest') }}:
+        name: ${{ parameters.pool }}
+      ${{ if eq(parameters['pool'], 'ubuntu-latest') }}:
+        vmImage: ${{ parameters.pool }}
+    steps:
+      - ${{ if parameters.saPublicAccessUpdate }}:
+        - template: templates/azcli/sa-update-public-network-access.yml
+          parameters:
+            azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+            resourceGroupName:  ${{ parameters.terraformResourceGroupName }}
+            workingDirectory: $(System.DefaultWorkingDirectory)
+            saName: ${{ parameters.terraformSaName }}
+            publicAccess: Enabled
+            waitAfterUpdate: true
+
+      - template: templates/terraform-outputs.yml
+        parameters:
+          azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+          workingDirectory: $(System.DefaultWorkingDirectory)/terraform/${{ parameters.enablersModule }}
+          terraformVersion: ${{ parameters.terraformVersion }}
+          terraformResourceGroupName: ${{ parameters.terraformResourceGroupName }}
+          terraformSaName: ${{ parameters.terraformSaName }}
+          terraformBackendContainerName: ${{ parameters.terraformBackendContainerName }}
+
+      - template: templates/terraform-outputs.yml
+        parameters:
+          azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+          workingDirectory: $(System.DefaultWorkingDirectory)/terraform/${{ parameters.infrastructureModule }}
+          terraformVersion: ${{ parameters.terraformVersion }}
+          terraformResourceGroupName: ${{ parameters.terraformResourceGroupName }}
+          terraformSaName: ${{ parameters.terraformSaName }}
+          terraformBackendContainerName: ${{ parameters.terraformBackendContainerName }}
+
+      - template: templates/azcli/kv-get-secrets.yml
+        parameters:
+          azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+          keyVaultName: ${{ parameters.keyVaultName }}
+          keyVaultSecretNames: ${{ parameters.keyVaultSecretNames }}
+    
+      - template: templates/psql/run-psql.yml
+        parameters:
+          runUserPassword: $(psqladminpwd)
+          runUsername:  $(psqladminuser)
+          host: $(terraform_out_psql_server_host)
+          workingDirectory: $(System.DefaultWorkingDirectory)
+          dbName: airflow
+          ignoreError: true
+          cmd: |
+            CREATE USER $(psqlairflowuser) WITH PASSWORD '$(psqlairflowpwd)';
+            GRANT ALL PRIVILEGES ON DATABASE airflow TO $(psqlairflowuser);
+            GRANT ALL ON SCHEMA public TO $(psqlairflowuser);
+
+      - ${{ if parameters.saPublicAccessUpdate }}:      
+        - template: templates/utils/get-agent-ip.yml
+          parameters:
+            workingDirectory: $(System.DefaultWorkingDirectory)
+
+        - template: templates/azcli/aks-get-authorized-ips.yml
+          parameters:
+            aksClusterName: $(terraform_out_aks_cluster_name_main)
+            aksClusterResourceGroup: $(terraform_out_aks_cluster_resource_group_name_main)
+            azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+            workingDirectory: $(System.DefaultWorkingDirectory)
+
+        - template: templates/azcli/aks-update-authorized-ips.yml
+          parameters:
+            aksClusterName: $(terraform_out_aks_cluster_name_main)
+            aksClusterResourceGroup: $(terraform_out_aks_cluster_resource_group_name_main)
+            authorizedIpRanges: $(baseRange),$(agentIp)
+            waitAfterUpdate: true
+            azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+            workingDirectory: $(System.DefaultWorkingDirectory)
+
+      - template: templates/helm-steps.yml
+        parameters:
+          aksClusterName: $(terraform_out_aks_cluster_name_main)
+          aksClusterResourceGroup: $(terraform_out_aks_cluster_resource_group_name_main)
+          acrName: $(terraform_out_acr_name_main)
+          kubectlVersion: ${{ parameters.kubectlVersion }}
+          helmVersion: ${{ parameters.helmVersion }}
+          helmReleaseName: ${{ parameters.ingressHelmReleaseName }}-calico
+          namespace: ${{ parameters.ingressNamespace }}
+          helmChartDirectory: $(System.DefaultWorkingDirectory)/helm/kubernetes-ingress-calico
+          azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+          downloadHelmDependencies: false
+          installCrds: false
+          helmChartValues: |
+            calico.cidrs.intrum.vpn=$(terraform_out_intrum_vpn_cidrs_rule0)
+            calico.cidrs.intrum.vpn_1=$(terraform_out_intrum_vpn_cidrs_rule1)
+            calico.cidrs.intrum.vpn_2=$(terraform_out_intrum_vpn_cidrs_rule2)
+            calico.cidrs.intrum.vpn_3=$(terraform_out_intrum_vpn_cidrs_rule3)
+            calico.cidrs.intrum.vpn_4=$(terraform_out_intrum_vpn_cidrs_rule4)
+            calico.cidrs.aks.nodes=$(terraform_out_aks_cluster_nodes_cidr_main)
+            calico.cidrs.agents.nodes=$(terraform_out_aks_cluster_nodes_cidr_devops)
+
+      - template: templates/kubectl/apply.yml
+        parameters:
+          filesToApply: $(System.DefaultWorkingDirectory)/kubernetes/container-insights-config/
+          namespace: kube-system
+          workingDirectory: $(System.DefaultWorkingDirectory)
+          condition: eq(variables['terraform_in_aks_main_oms_agent_enabled'], 'true')
+      
+      - template: templates/helm-steps.yml
+        parameters:
+          aksClusterName: $(terraform_out_aks_cluster_name_main)
+          aksClusterResourceGroup: $(terraform_out_aks_cluster_resource_group_name_main)
+          acrName: $(terraform_out_acr_name_main)
+          kubectlVersion: ${{ parameters.kubectlVersion }}
+          helmVersion: ${{ parameters.helmVersion }}
+          helmReleaseName: ${{ parameters.ingressHelmReleaseName }}
+          namespace: ${{ parameters.ingressNamespace }}
+          helmChartDirectory: $(System.DefaultWorkingDirectory)/helm/kubernetes-ingress
+          azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+          downloadHelmDependencies: false
+          installCrds: false
+          enableOSM: false
+          skipAksLogon: true
+          skipHelmInstall: true
+          skipKubectlInstall: true
+          helmChartValues: |
+            ingress-nginx.controller.image.registry=$(terraform_out_acr_name_main).azurecr.io
+            ingress-nginx.controller.image.tag=${{ parameters.ingressVersion }}
+            ingress-nginx.controller.admissionWebhooks.patch.image.registry=$(terraform_out_acr_name_main).azurecr.io
+            ingress-nginx.controller.admissionWebhooks.patch.image.tag=${{ parameters.kubeWebhookCertgenVersion }}
+            ingress-nginx.controller.labels.controller=$(ingress_helm_release_name)       
+
+      - template: templates/cluster-calico-osm-patch.yml
+        parameters:
+          calicoVersion: ${{ parameters.calicoVersion }}
+          calicoNamespace: ${{ parameters.calicoNamespace }}
+          osmVersion: ${{ parameters.osmVersion }}
+          osmNamespace: ${{ parameters.osmNamespace }}
+          addIngressConfig: true
+          ingressNamespace: ${{ parameters.ingressNamespace }}
+          ingressReleaseName: ${{ parameters.ingressHelmReleaseName }}
+          ingressClientCertSecretName: ${{ parameters.ingressClientCertSecretName }}
+      
+      - ${{ if parameters.saPublicAccessUpdate }}:      
+        - template: templates/azcli/aks-update-authorized-ips.yml
+          parameters:
+            aksClusterName: $(terraform_out_aks_cluster_name_main)
+            aksClusterResourceGroup: $(terraform_out_aks_cluster_resource_group_name_main)
+            authorizedIpRanges: $(baseRange)
+            condition: and(always(), eq(variables.updatedAksApi, 'true'))
+            waitAfterUpdate: false
+            azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+            workingDirectory: $(System.DefaultWorkingDirectory)
+
+      - template: templates/azcli/sa-update-public-network-access.yml
+        parameters:
+          azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+          resourceGroupName:  ${{ parameters.terraformResourceGroupName }}
+          workingDirectory: $(System.DefaultWorkingDirectory)
+          saName: ${{ parameters.terraformSaName }}
+          publicAccess: Disabled
+          waitAfterUpdate: false
+          condition: or (always(), canceled())
+
+  - job: databricks_workspace_assign_wait
+    displayName: Confirm Databricks Workspace Assign run
+    condition: and(succeeded('main_cluster_setup'), eq(variables.environment_initial_deployment, 'true'))
+    timeoutInMinutes: 30
+    pool: server
+    dependsOn: 
+      - main_cluster_setup
+    steps:
+      - task: ManualValidation@0
+        displayName: Pipeline run confirmation
+        inputs:
+          instructions: Please update da-${{ parameters.environmentName }}-metastore variable group and run first 2 stages of Databricks Workspace Assign pipeline before approving this job.

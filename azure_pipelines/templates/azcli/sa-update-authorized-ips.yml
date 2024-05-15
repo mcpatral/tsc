@@ -1,0 +1,48 @@
+parameters:
+  - name: saName
+    displayName: Storage Account name
+    type: string
+  - name: authorizedIpRanges
+    displayName: Space-separated list of IP/CIDR to authorize in SA API
+    type: string
+  - name: action
+    displayName: Action to do with network rule - add/remove
+    default: add
+    values:
+      - add
+      - remove
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+  - name: waitAfterUpdate
+    displayName: Wait for 30 seconds after update
+    type: boolean
+    default: false
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+  - name: workingDirectory
+    displayName: Azure CLI working directory
+    type: string
+
+steps:
+  - task: AzureCLI@2
+    displayName: Update IP to SA API authorized IP ranges
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        az storage account network-rule ${{ parameters.action }} -n ${{ parameters.saName }} --ip-address ${{ parameters.authorizedIpRanges }} --query "networkRuleSet.ipRules"
+        echo "##vso[task.setvariable variable=updatedSaApi]true"
+      workingDirectory: ${{ parameters.workingDirectory }}
+
+  - ${{ if parameters.waitAfterUpdate }}:
+    - template: ../utils/timeout.yml
+      parameters:
+        secondsToWait: "30" # Waiting for rules to be applied
+        workingDirectory: $(System.DefaultWorkingDirectory)
+        condition: ${{ parameters.condition }}

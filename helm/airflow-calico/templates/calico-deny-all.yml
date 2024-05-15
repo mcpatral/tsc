@@ -1,0 +1,24 @@
+apiVersion: crd.projectcalico.org/v1
+kind: NetworkPolicy
+metadata:
+  name: default.airflow-deny-all
+  namespace: {{ .Release.Namespace }}
+spec:
+  order: 100
+  types:
+    - Ingress
+    - Egress
+  ingress:
+    - action: Log
+      destination: {}
+      source: {}
+    - action: Deny
+      destination: {}
+      source: {}
+  egress:
+    - action: Log
+      destination: {}
+      source: {}
+    - action: Deny
+      destination: {}
+      source: {}

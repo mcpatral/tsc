@@ -1,0 +1,30 @@
+parameters:
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+  - name: workingDirectory
+    displayName: Azure CLI working directory
+    type: string
+
+steps:
+  - task: AzureCLI@2
+    displayName: Get SPN authorization token
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        adoToken=$(az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 --query "accessToken" --output tsv)
+        if [[ $? -ne 0 ]]; then
+          echo "##vso[task.logissue type=error;]error retrieving the token"
+          exit 1
+        fi
+        
+        echo "##vso[task.setvariable variable=azure_devops_access_token;isSecret=true]$adoToken"
+      workingDirectory: ${{ parameters.workingDirectory }}

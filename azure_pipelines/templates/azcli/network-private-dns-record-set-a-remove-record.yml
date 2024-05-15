@@ -1,0 +1,51 @@
+parameters:
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+  - name: workingDirectory
+    displayName: Azure CLI working directory
+    type: string
+  - name: dnsZoneSubscriptionID
+    displayName: Subscription ID of the Private DNS zone
+    type: string
+  - name: dnsZoneResourceGroupName
+    displayName: Dns Zone Resource Group Name
+    type: string
+  - name: dnsZoneName
+    displayName: Dns Zone Name
+    type: string
+  - name: recordSetName
+    displayName: Name of the record set, relative to the name of the zone.
+    type: string
+  - name: ipAddressToRemove
+    displayName: Ip address to remove from the DNS record
+    type: string
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+  - name: stepNameSuffix
+    displayName: Step name suffix
+    type: string
+    default: ''
+
+steps:
+  - task: AzureCLI@2
+    name: remove_add_ip_for_a_record_for_${{ parameters.stepNameSuffix }}
+    displayName: Remove IP for the a record ${{ parameters.stepNameSuffix }}
+    timeoutInMinutes: 3
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        echo "Removing the A DNS record ${{ parameters.recordSetName }} from ${{ parameters.dnsZoneName }} and ${{ parameters.dnsZoneResourceGroupName }} with the ip address ${{ parameters.ipAddressToRemove }}"
+        az network private-dns record-set a remove-record --subscription ${{ parameters.dnsZoneSubscriptionID }} -g ${{ parameters.dnsZoneResourceGroupName }} -z ${{ parameters.dnsZoneName }} -n ${{ parameters.recordSetName }} -a ${{ parameters.ipAddressToRemove }} --keep-empty-record-set
+        echo "##vso[task.logissue type=warning;]the record ${{ parameters.recordSetName }} for the ip ${{ parameters.ipAddressToRemove }} has been removed."
+        if [[ $? -ne 0 ]]; then
+          echo "##vso[task.logissue type=error;]the record ${{ parameters.recordSetName }} for the ip ${{ parameters.ipAddressToRemove }} cannot be removed"
+          exit 1
+        fi
+      workingDirectory: ${{ parameters.workingDirectory }}

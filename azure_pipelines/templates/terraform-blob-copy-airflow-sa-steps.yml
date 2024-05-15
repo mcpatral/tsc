@@ -1,0 +1,255 @@
+parameters:
+- name: azureServiceConnectionName
+  type: string
+- name: terraformVersion
+  type: string
+- name: terraformResourceGroupName
+  displayName: Resource group for Terraform state of environment
+  type: string
+- name: terraformSaName
+  displayName: Storage Account name for Terraform state of environment
+  type: string
+- name: terraformBackendContainerName
+  displayName: SA Container name for Terraform state of environment
+  type: string
+- name: saPublicAccessUpdate
+  displayName: Storage Account Public Access Update
+  type: boolean
+- name: sourceEnablersModule
+  displayName: Source Enablers Module
+  type: string
+- name: targetEnablersModule
+  displayName: Target Enablers Module
+  type: string
+- name: sourceInfrastructureModule
+  displayName: Source Infrastructure Module
+  type: string
+- name: targetInfrastructureModule
+  displayName: Target Infrastructure Module
+  type: string
+- name: dnsZoneSubscriptionID
+  displayName: Private DNS zone's for A records subscription ID
+  type: string
+- name: dnsZoneResourceGroupName
+  displayName: Private DNS Zone Resource Group Name
+  type: string
+- name: privateEndpointResourceGroupName
+  displayName: Private Endpoint Resource Group Name
+  type: string
+- name: airflowSaContainersToCopy
+  displayName: Airflow Storage Account Containers To Copy
+  type: object
+- name: kubectlVersion
+  displayName: Kubectl version
+  type: string
+- name: helmVersion
+  displayName: Helm version
+  type: string
+
+steps:
+- ${{ if parameters.saPublicAccessUpdate }}:
+  - template: azcli/sa-update-public-network-access.yml
+    parameters:
+      azureServiceConnectionName: ${{ parameters.targetAzureServiceConnectionName }}
+      resourceGroupName:  ${{ parameters.terraformResourceGroupName }}
+      workingDirectory: $(System.DefaultWorkingDirectory)
+      saName: ${{ parameters.terraformSaName }}
+      publicAccess: Enabled
+      waitAfterUpdate: true
+
+################################# TERRAFORM OUTPUTS SOURCE SA
+- template: terraform-outputs.yml
+  parameters:
+    azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+    workingDirectory: $(System.DefaultWorkingDirectory)/terraform/${{ parameters.sourceEnablersModule }}
+    terraformVersion: ${{ parameters.terraformVersion }}
+    terraformResourceGroupName: ${{ parameters.terraformResourceGroupName }}
+    terraformSaName: ${{ parameters.terraformSaName }}
+    terraformBackendContainerName: ${{ parameters.terraformBackendContainerName }}
+
+- template: terraform-outputs.yml
+  parameters:
+    azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+    workingDirectory: $(System.DefaultWorkingDirectory)/terraform/${{ parameters.sourceInfrastructureModule }}
+    terraformVersion: ${{ parameters.terraformVersion }}
+    terraformResourceGroupName: ${{ parameters.terraformResourceGroupName }}
+    terraformSaName: ${{ parameters.terraformSaName }}
+    terraformBackendContainerName: ${{ parameters.terraformBackendContainerName }}
+
+- template: azcli/resource-show-property.yml
+  parameters:
+    stepNameSubstring: source_sa
+    azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+    resourceName: $(terraform_out_sa_name_airflow)
+    resourceGroupName: $(terraform_out_resource_group_name)
+    resourceType: "Microsoft.Storage/storageAccounts"
+    workingDirectory: $(System.DefaultWorkingDirectory)
+    propertyAddress: id
+
+- bash: |
+    echo "Source resource group is $(terraform_out_resource_group_name)"
+    echo "##vso[task.setvariable variable=resource_group_name_source]$(terraform_out_resource_group_name)"
+
+    echo "Source Airflow SA is $(terraform_out_sa_name_airflow)"
+    echo "##vso[task.setvariable variable=sa_name_airflow_source]$(terraform_out_sa_name_airflow)"
+  displayName: 'Export source resources info'
+
+################################# TERRAFORM OUTPUTS TARGET SA
+- template: terraform-outputs.yml
+  parameters:
+    azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+    workingDirectory: $(System.DefaultWorkingDirectory)/terraform/${{ parameters.targetEnablersModule }}
+    terraformVersion: ${{ parameters.terraformVersion }}
+    terraformResourceGroupName: ${{ parameters.terraformResourceGroupName }}
+    terraformSaName: ${{ parameters.terraformSaName }}
+    terraformBackendContainerName: ${{ parameters.terraformBackendContainerName }}
+
+- template: terraform-outputs.yml
+  parameters:
+    azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+    workingDirectory: $(System.DefaultWorkingDirectory)/terraform/${{ parameters.targetInfrastructureModule }}
+    terraformVersion: ${{ parameters.terraformVersion }}
+    terraformResourceGroupName: ${{ parameters.terraformResourceGroupName }}
+    terraformSaName: ${{ parameters.terraformSaName }}
+    terraformBackendContainerName: ${{ parameters.terraformBackendContainerName }}
+
+- template: azcli/resource-show-property.yml
+  parameters:
+    stepNameSubstring: target_sa
+    azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+    resourceName: $(terraform_out_sa_name_airflow)
+    resourceGroupName: $(terraform_out_resource_group_name)
+    resourceType: "Microsoft.Storage/storageAccounts"
+    workingDirectory: $(System.DefaultWorkingDirectory)
+    propertyAddress: id
+
+- bash: |
+    echo "Target resource group is $(terraform_out_resource_group_name)"
+    echo "##vso[task.setvariable variable=resource_group_name_target]$(terraform_out_resource_group_name)"
+
+    echo "Target Airflow SA is $(terraform_out_sa_name_airflow)"
+    echo "##vso[task.setvariable variable=sa_name_airflow_target]$(terraform_out_sa_name_airflow)"
+  displayName: 'Export target resources info'
+
+################################# ROTATE A DNS RECORDS TO RUN AZCOPY
+- template: rotate-a-dns-records-steps.yml
+  parameters:
+    azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+    dnsZoneSubscriptionID: ${{ parameters.dnsZoneSubscriptionID }}
+    dnsZoneResourceGroupName: ${{ parameters.dnsZoneResourceGroupName }}
+    privateEndpointResourceGroupName: ${{ parameters.privateEndpointResourceGroupName }}
+    kubectlVersion: ${{ parameters.kubectlVersion }}
+    condition: and(not(failed()), not(canceled()))
+    privateDns:
+      - substring: blob
+        name: privatelink.blob.core.windows.net
+    aDnsRecords:
+      - name: $(sa_name_airflow_source)
+        targetResourceSubstring: saairflowsource
+        fromPrivateEndpoint: true
+        usePrivateEndpointName: false
+        ttl_seconds: 10
+        dnsSubstrings:
+          - subresource: blob
+      - name: $(sa_name_airflow_target)
+        targetResourceSubstring: saairflowtarget
+        fromPrivateEndpoint: true
+        usePrivateEndpointName: false
+        ttl_seconds: 10
+        dnsSubstrings:
+          - subresource: blob
+
+################################# OPEN SAs TO PUBLIC TO CHANGE ACLS
+- template: azcli/sa-update-public-network-access.yml
+  parameters:
+    azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+    resourceGroupName:  $(resource_group_name_source)
+    workingDirectory: $(System.DefaultWorkingDirectory)
+    saName: $(sa_name_airflow_source)
+    publicAccess: Enabled
+    waitAfterUpdate: false
+
+- template: azcli/sa-update-public-network-access.yml
+  parameters:
+    azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+    resourceGroupName:  $(resource_group_name_target)
+    workingDirectory: $(System.DefaultWorkingDirectory)
+    saName: $(sa_name_airflow_target)
+    publicAccess: Enabled
+    waitAfterUpdate: true
+
+################################# CONFIGURE CONTAINER ACLs
+- ${{ each airflowContainer in parameters.airflowSaContainersToCopy }}:
+  - template: azcli/storage-fs-access-set-recursive.yml
+    parameters:
+      azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+      storageAccountName: $(sa_name_airflow_source)
+      containerName: ${{ airflowContainer }}
+      fileAddress: "/"
+      acl: "user::rwx,group::rwx,other::rwx"
+      workingDirectory: $(System.DefaultWorkingDirectory)
+
+  - template: azcli/storage-fs-access-set-recursive.yml
+    parameters:
+      azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+      storageAccountName: $(sa_name_airflow_target)
+      containerName: ${{ airflowContainer }}
+      fileAddress: "/"
+      acl: "user::rwx,group::rwx,other::rwx"
+      workingDirectory: $(System.DefaultWorkingDirectory)
+
+################################# AZ COPY STEPS
+- bash: |
+    echo "##vso[task.setvariable variable=AZCOPY_AUTO_LOGIN_TYPE]MSI"
+  displayName: 'AZCOPY ENV VAR'
+
+- ${{ each airflowContainer in parameters.airflowSaContainersToCopy }}:
+  - template: azcli/azcopy-copy.yml
+    parameters:
+      azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+      source: https://$(sa_name_airflow_source).blob.core.windows.net/${{ airflowContainer }}/
+      destination: https://$(sa_name_airflow_target).blob.core.windows.net/${{ airflowContainer }}/
+      workingDirectory: $(System.DefaultWorkingDirectory)
+      extraParameters: "--recursive --overwrite=true"
+
+################################# CONFIGURE CONTAINER ACLs ONLY FOR TARGET SA
+- ${{ each airflowContainer in parameters.airflowSaContainersToCopy }}:
+  - template: azcli/storage-fs-access-set-recursive.yml
+    parameters:
+      azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+      storageAccountName: $(sa_name_airflow_target)
+      containerName: ${{ airflowContainer }}
+      fileAddress: "/"
+      acl: "user::rwx,group::rwx,other::rwx"
+      workingDirectory: $(System.DefaultWorkingDirectory)
+
+################################# CLOSE SAs FROM PUBLIC
+- template: azcli/sa-update-public-network-access.yml
+  parameters:
+    azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+    resourceGroupName:  $(resource_group_name_source)
+    workingDirectory: $(System.DefaultWorkingDirectory)
+    saName: $(sa_name_airflow_source)
+    publicAccess: Disabled
+    waitAfterUpdate: false
+    condition: or (always(), canceled()) 
+
+- template: azcli/sa-update-public-network-access.yml
+  parameters:
+    azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+    resourceGroupName:  $(resource_group_name_target)
+    workingDirectory: $(System.DefaultWorkingDirectory)
+    saName: $(sa_name_airflow_target)
+    publicAccess: Disabled
+    waitAfterUpdate: false
+    condition: or (always(), canceled()) 
+
+- template: azcli/sa-update-public-network-access.yml
+  parameters:
+    azureServiceConnectionName: ${{ parameters.targetAzureServiceConnectionName }}
+    workingDirectory: $(System.DefaultWorkingDirectory)
+    resourceGroupName:  ${{ parameters.terraformResourceGroupName }}
+    saName: ${{ parameters.terraformSaName }}
+    publicAccess: Disabled
+    waitAfterUpdate: false
+    condition: or (always(), canceled()) 

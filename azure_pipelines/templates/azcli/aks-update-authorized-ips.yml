@@ -1,0 +1,49 @@
+parameters:
+  - name: aksClusterName
+    displayName: AKS Cluster name
+    type: string
+  - name: aksClusterResourceGroup
+    displayName: AKS Cluster resource group name
+    type: string
+  - name: authorizedIpRanges
+    displayName: Comma-separated list of IP/CIDR to authorize in AKS API
+    type: string
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+  - name: waitAfterUpdate
+    displayName: Azure CLI working directory
+    type: boolean
+    default: false
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+  - name: workingDirectory
+    displayName: Azure CLI working directory
+    type: string
+
+steps:
+  - task: AzureCLI@2
+    displayName: Update AKS API authorized IP ranges
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        az aks update -n ${{ parameters.aksClusterName }} -g ${{ parameters.aksClusterResourceGroup }} --api-server-authorized-ip-ranges "${{ parameters.authorizedIpRanges }}" --query 'apiServerAccessProfile.authorizedIpRanges'
+        if [[ $? -ne 0 ]]; then
+          echo "##vso[task.logissue type=error;]error updating AKS API authorized IP ranges"
+          exit 1
+        fi
+        echo "##vso[task.setvariable variable=updatedAksApi]true"
+      workingDirectory: ${{ parameters.workingDirectory }}
+
+  - ${{ if parameters.waitAfterUpdate }}:
+    - template: ../utils/timeout.yml
+      parameters:
+        secondsToWait: "60" # Waiting for rules to be applied
+        workingDirectory: $(System.DefaultWorkingDirectory)
+        condition: ${{ parameters.condition }}

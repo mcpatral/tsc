@@ -1,0 +1,38 @@
+parameters:
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+  - name: schemaCommaSeparated
+    displayName: Databricks Schema name separated by comma
+    type: string
+  - name: catalogName
+    displayName: Databricks catalog Name
+    type: string
+    
+steps:
+  - task: AzureCLI@2
+    displayName: 'list tables in the schema ${{ parameters.schemaCommaSeparated }} and catalog ${{ parameters.catalogName }}'
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        IFS=', ' read -ra schemas <<< "${{ parameters.schemaCommaSeparated }}"
+        table_raw_data=""
+        for schema in "${schemas[@]}"; do
+          echo "Processing schema: $schema"
+          databricks tables list "${{ parameters.catalogName }}" "$schema"
+          tables=$(databricks tables list "${{ parameters.catalogName }}" "$schema" | jq -r '.tables[] | .name')
+          if [[ $? -ne 0 ]]; then
+            echo "##vso[task.logissue type=error;]Unable to list table $table may not exist in $schema. Please confirm that the specified table exists and that you have the necessary permissions to delete it. Ensure that no active processes or dependencies are associated with this table before attempting to delete. If the table is part of any ongoing transactions or has dependent objects, resolve those dependencies before proceeding with the deletion."
+          fi
+          echo "Tables for $schema: $tables"
+          if [[ -n "$tables" ]]; then
+            for table in $tables; do
+              table_raw_data+="$schema:$table,"
+            done
+          fi
+        done
+        table_raw_data="${table_raw_data%,}"
+        echo "Final table_raw_data: $table_raw_data"
+        echo "##vso[task.setvariable variable=tables_comma_separated]$table_raw_data"

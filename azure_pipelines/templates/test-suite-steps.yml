@@ -1,0 +1,158 @@
+parameters:
+  - name: azureServiceConnectionName
+    type: string
+  - name: terraformVersion
+    type: string
+  - name: terraformResourceGroupName
+    displayName: Resource group for Terraform state of environment
+    type: string
+  - name: terraformSaName
+    displayName: Storage Account name for Terraform state of environment
+    type: string
+  - name: terraformBackendContainerName
+    displayName: SA Container name for Terraform state of environment
+    type: string
+  - name: mainResourceGroupName
+    displayName: Main resource group
+    type: string
+  - name: kvTestSuiteResourceGroupName
+    displayName: Test Suite Key Vault resource group
+    type: string
+  - name: enablersModule
+    displayName: Enablers module name
+    type: string
+    default: enablers
+  - name: infrastructureModule
+    displayName: Infrastructure module name
+    type: string
+    default: infrastructure
+  - name: contentModule
+    displayName: content module name
+    type: string
+    default: content
+  - name: mainKeyVaultName
+    displayName: Key vault name
+    type: string    
+  - name: mainKeyVaultSecretNames
+    displayName: Key vault secret names
+    type: object
+  - name: testKeyVaultName
+    displayName: Key vault name
+    type: string    
+  - name: testKeyVaultSecretNames
+    displayName: Key vault secret names
+    type: object
+  - name: saPublicAccessUpdate
+    displayName: Storage Account Public Access Update
+    type: boolean
+  - name: mavenPomFile
+    displayName: Maven test suite pom file path
+    type: string
+  - name: mavenGoal
+    displayName: Maven test goal
+    type: string
+  - name: mavenOptions
+    displayName: Maven options
+    type: string
+  - name: mavenProfiles
+    displayName: Maven profiles
+    type: string    
+  - name: continueOnError
+    displayName: Continue on Failure
+    type: string
+    default: false
+
+steps:
+  - ${{ if parameters.saPublicAccessUpdate }}:
+    - template: azcli/sa-update-public-network-access.yml
+      parameters:
+        azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+        resourceGroupName:  ${{ parameters.terraformResourceGroupName }}
+        workingDirectory: $(System.DefaultWorkingDirectory)
+        saName: ${{ parameters.terraformSaName }}
+        publicAccess: Enabled
+        waitAfterUpdate: true
+
+  - template: /azure_pipelines/templates/terraform-outputs.yml  
+    parameters:
+      azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+      terraformVersion: ${{ parameters.terraformVersion }}
+      terraformResourceGroupName: ${{ parameters.terraformResourceGroupName }}
+      terraformSaName: ${{ parameters.terraformSaName }}
+      terraformBackendContainerName: ${{ parameters.terraformBackendContainerName }}
+      workingDirectory: $(System.DefaultWorkingDirectory)/devops/terraform/${{ parameters.enablersModule }}
+
+  - template: /azure_pipelines/templates/terraform-outputs.yml
+    parameters:
+      azureServiceConnectionName:  ${{ parameters.azureServiceConnectionName }}
+      terraformVersion: ${{ parameters.terraformVersion }}
+      terraformResourceGroupName: ${{ parameters.terraformResourceGroupName }}
+      terraformSaName: ${{ parameters.terraformSaName }}
+      terraformBackendContainerName: ${{ parameters.terraformBackendContainerName }}
+      workingDirectory: $(System.DefaultWorkingDirectory)/devops/terraform/${{ parameters.infrastructureModule }}
+
+  - template: /azure_pipelines/templates/terraform-outputs.yml
+    parameters:
+      azureServiceConnectionName:  ${{ parameters.azureServiceConnectionName }}
+      terraformVersion: ${{ parameters.terraformVersion }}
+      terraformResourceGroupName: ${{ parameters.terraformResourceGroupName }}
+      terraformSaName: ${{ parameters.terraformSaName }}
+      terraformBackendContainerName: ${{ parameters.terraformBackendContainerName }}
+      workingDirectory: $(System.DefaultWorkingDirectory)/devops/terraform/${{ parameters.contentModule }}
+
+  - template: utils/get-agent-ip.yml
+    parameters:
+      workingDirectory: $(System.DefaultWorkingDirectory)
+
+  - ${{ if ne(length(parameters.mainKeyVaultSecretNames), 0) }}:
+    - template: azcli/kv-get-secrets.yml
+      parameters:
+        azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+        keyVaultName: ${{ parameters.mainKeyVaultName }}
+        keyVaultSecretNames: ${{ parameters.mainKeyVaultSecretNames }}
+
+    - template: azcli/kv-update-public-network-access.yml
+      parameters:
+        azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+        resourceGroupName:  ${{ parameters.mainResourceGroupName }}
+        workingDirectory: $(System.DefaultWorkingDirectory)
+        kvName: ${{ parameters.mainKeyVaultName }}
+        publicAccess: Disabled
+        waitAfterUpdate: false
+        condition: or (always(), canceled())
+  
+  - ${{ if ne(length(parameters.testKeyVaultSecretNames), 0) }}:
+    - template: azcli/kv-get-secrets.yml
+      parameters:
+        azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+        keyVaultName: ${{ parameters.testKeyVaultName }}
+        keyVaultSecretNames: ${{ parameters.testKeyVaultSecretNames }}
+
+    - template: azcli/kv-update-public-network-access.yml
+      parameters:
+        azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+        resourceGroupName:  ${{ parameters.kvTestSuiteResourceGroupName }}
+        workingDirectory: $(System.DefaultWorkingDirectory)
+        kvName: ${{ parameters.testKeyVaultName }}
+        publicAccess: Disabled
+        waitAfterUpdate: false
+        condition: or (always(), canceled())
+
+  - template: azcli/sa-update-public-network-access.yml
+    parameters:
+      azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+      resourceGroupName:  ${{ parameters.terraformResourceGroupName }}
+      workingDirectory: $(System.DefaultWorkingDirectory)
+      saName: ${{ parameters.terraformSaName }}
+      publicAccess: Disabled
+      waitAfterUpdate: false
+      condition: or (always(), canceled())
+
+  - template: maven/test-suite.yml
+    parameters:
+      mavenPomFile: ${{ parameters.mavenPomFile }}
+      mavenGoal: ${{ parameters.mavenGoal }}
+      mavenOptions: ${{ parameters.mavenOptions }}
+      mavenProfiles: ${{ parameters.mavenProfiles }}
+      continueOnError: ${{ parameters.continueOnError }}
+      azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}

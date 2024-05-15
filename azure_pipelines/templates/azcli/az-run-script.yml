@@ -1,0 +1,69 @@
+parameters:
+  - name: scriptPath
+    displayName: Azure CLI script path
+    type: string
+  - name: scriptArguments
+    displayName: Azure CLI script arguments
+    type: string
+    default: ""
+  - name: scriptType
+    displayName: Azure CLI script type
+    type: string
+    values:
+      - ps
+      - pscore
+      - bash
+      - batch
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+  - name: addSpnToEnvironment
+    displayName: Add SPN values to Environment variables
+    type: boolean
+    default: false
+  - name: useGlobalConfig
+    displayName: Use Azure CLI Global config
+    type: boolean
+    default: false
+  - name: failOnStandardError
+    displayName: Fail script on standard error
+    type: boolean
+    default: true
+  - name: errorActionPreference
+    displayName: Error Action Preference value (applicable only for PowerShell scripts)
+    type: string
+    default: stop
+    values:
+      - stop
+      - continue
+      - silentlyContinue
+  - name: ignoreLastExitCode
+    displayName: Ignore last exit code (applicable only for PowerShell scripts)
+    type: boolean
+    default: false
+  - name: workingDirectory
+    displayName: Azure CLI working directory
+    type: string
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+
+steps:
+  - task: AzureCLI@2
+    displayName: Run Powershell script for Azure CLI commands
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      scriptType: ${{ parameters.scriptType }}
+      scriptLocation: 'scriptPath'
+      scriptPath: ${{ parameters.scriptPath }}
+      arguments: ${{ parameters.scriptArguments }}
+      workingDirectory: ${{ parameters.workingDirectory }}
+      addSpnToEnvironment: ${{ parameters.addSpnToEnvironment }}
+      useGlobalConfig: ${{ parameters.useGlobalConfig }}
+      failOnStandardError: ${{ parameters.failOnStandardError }}
+      ${{ if or(eq(parameters.scriptType, 'ps'), eq(parameters.scriptType, 'pscore')) }}:
+        powerShellErrorActionPreference: ${{ parameters.errorActionPreference }}
+        powerShellIgnoreLASTEXITCODE: ${{ parameters.ignoreLastExitCode }}

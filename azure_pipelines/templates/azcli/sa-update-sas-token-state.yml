@@ -1,0 +1,28 @@
+parameters:
+  - name: saName
+    displayName: Storage Account name
+    type: string
+  - name:  resourceGroupName
+    displayName: Resource group name
+    type: string    
+  - name: enabled
+    displayName: Enable / disable SAS
+    type: boolean
+    default: false    
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+  - name: workingDirectory
+    displayName: Azure CLI working directory
+    type: string
+
+steps:
+  - task: AzureCLI@2
+    displayName: ${{ parameters.enabled }} SAS for Storage Account
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        az storage account update --allow-shared-key-access ${{ parameters.enabled }} --name ${{ parameters.saName }} --resource-group ${{ parameters.resourceGroupName }}
+      workingDirectory: ${{ parameters.workingDirectory }}

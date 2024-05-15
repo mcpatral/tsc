@@ -1,0 +1,31 @@
+parameters:
+  - name: aksClusterName
+    displayName: AKS Cluster name
+    type: string
+  - name: aksClusterResourceGroup
+    displayName: AKS Cluster resource group name
+    type: string
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+  - name: workingDirectory
+    displayName: Azure CLI working directory
+    type: string
+  - name: action
+    displayName: stop / start
+    type: string    
+    values:
+      - start
+      - stop   
+
+steps:
+  - task: AzureCLI@2
+    displayName: ${{ parameters.action }} ${{ parameters.aksClusterName }}
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        az aks ${{ parameters.action }} --name ${{ parameters.aksClusterName }} --resource-group ${{ parameters.aksClusterResourceGroup }} || true
+      workingDirectory: ${{ parameters.workingDirectory }}
+

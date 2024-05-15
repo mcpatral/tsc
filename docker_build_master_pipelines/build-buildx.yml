@@ -1,0 +1,78 @@
+trigger:
+- none
+
+schedules:
+- cron: '35 17 * * 1-5'
+  displayName: Daily midnight build
+  always: true
+  branches:
+    include:
+    - main
+
+parameters:
+  - name: versionToSet
+    displayName: Ingress Version to set
+    type: string
+    default: buildx-stable-1
+  - name: azureServiceConnectionName
+    type: string
+    default: 'sc_datamngtdev_poc'
+  - name: azureContainerRegistry
+    type: string
+    default: 'acrdevdaweucentralmanual'   
+  - name: azureGlobalContainerRegistry
+    type: string
+    default: 'acrdevdaweucentralmanual'    
+  - name: azureGlobalContainerRegistryRg
+    type: string
+    default: 'rg-dev-da-weu-central-manual'          
+  - name: environmentName
+    displayName: where to build
+    type: string
+    default: dev           
+
+variables:
+  - group: ${{ parameters.environmentName }}
+  - name: project_name
+    value: igtpoc
+  - name: common_feed_name
+    value: common         
+  - name: aksDevOpsNamespace
+    value: ${{ parameters.environmentName }}-agentpool    
+  - name: terraformVersion
+    value: "1.5.0"
+  - name: terraformResourceGroupName
+    value: rg-$(terraform_in_environment_type)-$(terraform_in_project)-$(terraform_in_location_short)-state
+  - name: terraformSaName
+    value: sa$(terraform_in_environment_type)$(terraform_in_project)$(terraform_in_location_short)tfstate        
+  - name: terraformBackendContainerName
+    value: $(terraform_in_environment_type)tfstate
+
+stages:
+- stage: Build_and_Push
+  displayName: Build and Push image
+  pool: 
+    name: ${{ variables.aksDevOpsNamespace }} 
+  jobs:
+  - job: build_and_push
+    displayName: Build and Push image
+    steps:
+      - checkout: self
+        path: s/devops 
+
+      - template: ../azure_pipelines/templates/docker-steps.yml
+        parameters:
+          versionToSet:  ${{ parameters.versionToSet }}
+          dockerDirectory: $(System.DefaultWorkingDirectory)/docker/buildx
+          azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+          azureContainerRegistry: ${{ parameters.azureContainerRegistry }}
+          imageName: buildkit
+          azureGlobalContainerRegistry: ${{ parameters.azureGlobalContainerRegistry }}
+          azureGlobalContainerRegistryRg: ${{ parameters.azureGlobalContainerRegistryRg }}
+          aksDevOpsNamespace: ${{ variables.aksDevOpsNamespace }}         
+          terraformVersion: ${{ variables.terraformVersion }} 
+          terraformResourceGroupName: ${{ variables.terraformResourceGroupName }}
+          terraformSaName: ${{ variables.terraformSaName }}
+          terraformBackendContainerName: ${{ variables.terraformBackendContainerName }}           
+          dockerArgs: ''
+          buildxTag: $(buildx_tag)          

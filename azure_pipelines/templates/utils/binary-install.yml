@@ -1,0 +1,29 @@
+parameters:
+  - name: binaryName
+    displayName: Binary name in Azure Artifacts to install
+    type: string
+  - name: binaryVersion
+    displayName: Binary version to install
+    type: string
+  - name: validationCommand
+    displayName: Binary install validation command
+    type: string
+    default: 'echo "Binary installed successfully"'
+
+steps:
+  - template: download-common-package.yml
+    parameters:
+      packageName: ${{ parameters.binaryName }}
+      packageVersion: ${{ parameters.binaryVersion }}
+      downloadDirectory: /opt/hostedtoolcache/${{ parameters.binaryName }}/${{ parameters.binaryVersion }}
+
+  - task: Bash@3
+    displayName: Add ${{ parameters.binaryName }} to PATH environment variable
+    inputs:
+      targetType: 'inline'
+      workingDirectory: $(System.DefaultWorkingDirectory)
+      script: |
+        chmod +x /opt/hostedtoolcache/${{ parameters.binaryName }}/${{ parameters.binaryVersion }}/${{ parameters.binaryName }}
+        echo "##vso[task.prependpath]/opt/hostedtoolcache/${{ parameters.binaryName }}/${{ parameters.binaryVersion }}"
+        export PATH="/opt/hostedtoolcache/${{ parameters.binaryName }}/${{ parameters.binaryVersion }}:$PATH"
+        ${{ parameters.validationCommand }}

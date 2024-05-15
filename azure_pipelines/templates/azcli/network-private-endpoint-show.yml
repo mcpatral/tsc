@@ -1,0 +1,61 @@
+parameters:
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+  - name: workingDirectory
+    displayName: Azure CLI working directory
+    type: string
+  - name: privateEndpointName
+    displayName: Private endpoint name
+    type: string
+  - name: resourceGroupName
+    displayName: Name of resource group
+    type: string
+  - name: aDnsRecordName
+    displayName: A DNS Record Name
+    type: string
+    default: ''
+  - name: fqdnSuffix
+    displayName: Fqdn suffix to extract the ip address
+    type: string
+    default: ''
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+  - name: stepNameSuffix
+    displayName: Step name suffix
+    type: string
+    default: ''
+
+steps:
+  - task: AzureCLI@2
+    name: ip_address_from_a_private_endpoint_${{ parameters.stepNameSuffix }}
+    displayName: Show ip for private endpoint ${{ parameters.privateEndpointName }}
+    timeoutInMinutes: 3
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        echo "Resource group ${{ parameters.resourceGroupName }}"
+        echo "Private endpoint ${{ parameters.privateEndpointName }}"
+        if [[ '${{ parameters.fqdnSuffix }}' == '' ]]; then
+          ip_address_pe=$(az network private-endpoint show -g ${{ parameters.resourceGroupName }} -n ${{ parameters.privateEndpointName }} --query "customDnsConfigs[0].ipAddresses" --output tsv)
+          if [[ $? -ne 0 ]]; then
+            echo "##vso[task.logissue type=error;]the private endpoint ${{ parameters.privateEndpointName }} may not exist in the resource group ${{ parameters.resourceGroupName }} or there may be some problem retrieving its ip address."
+            exit 1
+          fi
+        else
+          ip_address_pe=$(az network private-endpoint show -g ${{ parameters.resourceGroupName }} -n ${{ parameters.privateEndpointName }} --query "customDnsConfigs[?contains(fqdn, '${{ parameters.aDnsRecordName }}${{ parameters.fqdnSuffix }}')].ipAddresses[0]" --output tsv)
+          if [[ $? -ne 0 ]]; then
+            echo "##vso[task.logissue type=error;]the private endpoint ${{ parameters.privateEndpointName }} may not exist in the resource group ${{ parameters.resourceGroupName }} or there may be some problem retrieving its ip address."
+            exit 1
+          fi
+        fi
+        echo "Ip address obtained: $ip_address_pe"
+        echo "##vso[task.setvariable variable=ip_address_pe_env]$ip_address_pe"
+        echo "##vso[task.setvariable variable=ip_address_pe_output;isOutput=true]$ip_address_pe"
+      workingDirectory: ${{ parameters.workingDirectory }}

@@ -1,0 +1,49 @@
+apiVersion: crd.projectcalico.org/v1
+kind: NetworkPolicy
+metadata:
+  name: default.{{ .Release.Name }}-allow-egress
+  namespace: {{ .Release.Namespace }}
+spec:
+  order: 10
+  types:
+    - Egress
+  egress:
+    - action: Allow
+      destination:
+        namespaceSelector: projectcalico.org/name == 'kube-system'
+      protocol: TCP
+    - action: Allow
+      destination:
+        ports:
+          - 53
+        selector: k8s-app == 'kube-dns'
+        namespaceSelector: projectcalico.org/name == 'kube-system'
+      protocol: UDP
+    - action: Allow
+      protocol: TCP
+      destination:
+        ports:
+        - 443
+        - 80
+    - action: Allow
+      protocol: TCP
+      destination:
+        nets:
+          - {{ .Values.calico.cidrs.aks.main.nodes }}
+        ports:
+          - 443
+          # - {{ .Values.calico.ports.vertica }}
+    - action: Allow
+      protocol: TCP
+      destination:
+        nets:
+          - {{ .Values.calico.cidrs.postgresql }}
+        ports:
+          - {{ .Values.calico.ports.postgresql }}
+    - action: Allow
+      protocol: TCP
+      destination:
+        nets:
+          - {{ .Values.calico.cidrs.aks.azureMetadata }}
+        ports:
+          - 80  

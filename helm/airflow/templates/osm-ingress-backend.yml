@@ -1,0 +1,19 @@
+apiVersion: policy.openservicemesh.io/v1alpha1
+kind: IngressBackend
+metadata:
+  name: {{ include "airflow.fullname" . }}-web
+  namespace: {{ .Release.Namespace }}
+spec:
+  backends:
+    - name: {{ include "airflow.fullname" . }}-web
+      port:
+        number: {{ .Values.airflow.web.service.externalPort }}
+        protocol: https
+      tls:
+        skipClientCertValidation: false
+  sources:
+    - kind: Service
+      name: {{ .Values.ingressController.name }}-controller
+      namespace: {{ .Values.ingressController.namespace }}
+    - kind: AuthenticatedPrincipal
+      name: {{ .Values.ingressController.name }}.{{ .Values.ingressController.namespace }}.cluster.local

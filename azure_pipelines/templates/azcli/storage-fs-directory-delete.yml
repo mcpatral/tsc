@@ -1,0 +1,46 @@
+parameters:
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+  - name: saName
+    displayName: storage account name
+    type: object
+    default: []
+  - name: containerNamesCommaSeparated
+    displayName: Storage container names
+    type: string
+  - name: pathToListFiles
+    displayName: Folder which contains files with list of folders inside containers
+    type: string
+  - name: workingDirectory
+    displayName: Azure CLI working directory
+    type: string
+  
+
+steps:
+  - task: AzureCLI@2
+    displayName: Deleting file system directory in SA containers
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      workingDirectory: ${{ parameters.workingDirectory }}
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        IFS=', ' read -ra containers <<< "${{ parameters.containerNamesCommaSeparated }}"
+
+        for container in "${containers[@]}"; do
+            echo "folder_names in $container:"
+            cat ${{ parameters.pathToListFiles }}/${{ parameters.saName }}_$container
+
+            echo "Deleting folders from storage account ${{ parameters.saName }} in container $container..."
+
+            while IFS= read -r directory; do
+              if [[ ! $directory == *"/"* ]]; then
+                echo "Deleting folder $directory from storage account ${{ parameters.saName }} in container $container..."
+                az storage fs directory delete -n "$directory" -f "$container" --account-name "${{ parameters.saName }}" --auth-mode login --yes
+                if [[ $? -ne 0 ]]; then
+                  echo "##vso[task.logissue type=error;]Unable to delete folder $directory from storage account ${{ parameters.saName }} in container $container. An unexpected error occurred. Please check your permissions, ensure there are no active operations or locks on the storage account ${{ parameters.saName }}, and try again. If the issue persists, contact support for assistance."
+                fi
+              fi
+            done < ${{ parameters.pathToListFiles }}/${{ parameters.saName }}_$container
+        done

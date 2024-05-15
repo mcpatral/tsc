@@ -1,0 +1,27 @@
+apiVersion: specs.smi-spec.io/v1alpha4
+kind: TCPRoute
+metadata:
+  name: {{ include "airflow.fullname" . }}-web-route
+  namespace: {{ .Release.Namespace }}
+spec:
+  matches:
+    ports:
+      - {{ .Values.airflow.web.service.externalPort }}
+---
+apiVersion: access.smi-spec.io/v1alpha3
+kind: TrafficTarget
+metadata:
+  name: {{ include "airflow.fullname" . }}-web
+  namespace: {{ .Release.Namespace }}
+spec:
+  destination:
+    kind: ServiceAccount
+    name: {{ .Values.airflow.serviceAccount.name }}
+    namespace: {{ .Release.Namespace }}
+  rules:
+    - kind: TCPRoute
+      name: {{ include "airflow.fullname" . }}-web-route
+  sources:
+    - kind: ServiceAccount
+      name: {{ .Values.airflow.serviceAccount.name }}
+      namespace: {{ .Release.Namespace }}

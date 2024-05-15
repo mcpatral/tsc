@@ -1,0 +1,27 @@
+apiVersion: specs.smi-spec.io/v1alpha4
+kind: TCPRoute
+metadata:
+  name: {{ include "airflow.fullname" . }}-pgbouncer-route
+  namespace: {{ .Release.Namespace }}
+spec:
+  matches:
+    ports:
+      - 6432
+---
+apiVersion: access.smi-spec.io/v1alpha3
+kind: TrafficTarget
+metadata:
+  name: {{ include "airflow.fullname" . }}-pgbouncer
+  namespace: {{ .Release.Namespace }}
+spec:
+  destination:
+    kind: ServiceAccount
+    name: {{ .Values.airflow.serviceAccount.name }}
+    namespace: {{ .Release.Namespace }}
+  rules:
+    - kind: TCPRoute
+      name: {{ include "airflow.fullname" . }}-pgbouncer-route
+  sources:
+    - kind: ServiceAccount
+      name: {{ .Values.airflow.serviceAccount.name }}
+      namespace: {{ .Release.Namespace }}

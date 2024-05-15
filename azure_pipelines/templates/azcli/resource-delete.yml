@@ -1,0 +1,45 @@
+parameters:
+  - name: resourceName
+    displayName: Resource Name
+    type: string
+  - name: resourceGroupName
+    displayName: Resource Group Name
+    type: string
+  - name: resourceType
+    displayName: Resource Type
+    type: string
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+  - name: workingDirectory
+    displayName: Azure CLI working directory
+    type: string
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+  - name: stepNameSubstring
+    displayName: Step Name Substring
+    type: string
+    default: ""
+
+steps:
+  - task: AzureCLI@2
+    name: resourceDelete_${{ parameters.stepNameSubstring }}
+    displayName: Delete resource ${{ parameters.stepNameSubstring }}
+    timeoutInMinutes: 15
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        echo "Deleting the resource ${{ parameters.resourceName }} in the resource group ${{ parameters.resourceGroupName }} with the resource type ${{ parameters.resourceType }} ..."
+        az resource delete -g ${{ parameters.resourceGroupName }} -n ${{ parameters.resourceName }} --resource-type ${{ parameters.resourceType }} --query 'id' --output tsv
+        if [[ $? -ne 0 ]]; then
+          echo "##vso[task.logissue type=warning;]the deletion of the resource ${{ parameters.resourceName }} in the resource group ${{ parameters.resourceGroupName }} with the resource type ${{ parameters.resourceType }} cannot be done. Probably the resource does not exist or it is in a different resource group."
+        else
+          echo "##vso[task.setvariable variable=deleted_resource_env]yes"
+        fi
+      workingDirectory: ${{ parameters.workingDirectory }}

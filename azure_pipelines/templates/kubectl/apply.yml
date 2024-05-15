@@ -1,0 +1,30 @@
+parameters:
+  - name: filesToApply
+    displayName: Path to file or to folder with files
+    type: string
+  - name: namespace
+    displayName: Namespace to install templates
+    type: string
+  - name: workingDirectory
+    displayName: Azure CLI working directory
+    type: string
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+
+steps:
+  - template: check-connectivity.yml
+    parameters:
+      workingDirectory: ${{ parameters.workingDirectory }}
+      condition: ${{ parameters.condition }}
+  
+  - task: Bash@3
+    displayName: Applying templates using kubectl
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    inputs:
+      targetType: 'inline'
+      script: |
+        find ${{ parameters.filesToApply }} -maxdepth 1 -type f -exec kubectl apply -n ${{ parameters.namespace }} -f {} \;
+      workingDirectory: ${{ parameters.workingDirectory }}

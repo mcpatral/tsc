@@ -1,0 +1,42 @@
+parameters:
+  - name: resourceType
+    displayName: Resource type to create
+    type: string
+  - name: resourceName
+    displayName: Resource name to create
+    type: string
+  - name: args
+    displayName: Additional arguments for command
+    type: string
+    default: ""
+  - name: namespace
+    displayName: Namespace to use for resource
+    type: string
+  - name: workingDirectory
+    displayName: Script working directory
+    type: string
+
+steps:
+  - template: check-connectivity.yml
+    parameters:
+      workingDirectory: ${{ parameters.workingDirectory }}
+  
+  - task: Bash@3
+    displayName: Creating ${{ parameters.resourceType }} using kubectl
+    inputs:
+      targetType: 'inline'
+      script: |
+        kubectl config set-context --current --namespace=${{ parameters.namespace }}
+        echo "Checking resource ${{ parameters.resourceType }}/${{ parameters.resourceName }} existance..."
+        kubectl get ${{ parameters.resourceType }} ${{ parameters.resourceName }}
+
+        if [ $? -ne 0 ]; 
+        then
+          echo "Resource ${{ parameters.resourceType }}/${{ parameters.resourceName }} doesn't exists."
+          echo "Creating resource ${{ parameters.resourceType }}/${{ parameters.resourceName }}..."
+          kubectl create ${{ parameters.resourceType }} ${{ parameters.resourceName }} ${{ parameters.args }}
+        else
+          echo "Resource ${{ parameters.resourceType }}/${{ parameters.resourceName }} already exists. Skipping creation..."
+          echo "##vso[task.logissue type=warning;]kubectl create: Resource ${{ parameters.resourceType }}/${{ parameters.resourceName }} already exists. Skipping creation..."
+        fi
+      workingDirectory: ${{ parameters.workingDirectory }}

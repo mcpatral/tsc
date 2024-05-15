@@ -1,0 +1,21 @@
+parameters:
+  - name: packageName
+    displayName: Package to download from Common feed
+  - name: packageVersion
+    displayName: Package version
+    type: string
+  - name: downloadDirectory
+    displayName: Path to save package
+    type: string
+    default: $(System.DefaultWorkingDirectory)
+
+steps:
+  - task: UniversalPackages@0
+    displayName: Download ${{ parameters.packageName }} universal package
+    inputs:
+      command: 'download'
+      downloadDirectory: ${{ parameters.downloadDirectory }}
+      feedsToUse: internal
+      vstsFeed: igtpoc/common
+      vstsFeedPackage: ${{ parameters.packageName }}
+      vstsPackageVersion: ${{ parameters.packageVersion }}

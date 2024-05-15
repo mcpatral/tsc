@@ -1,0 +1,51 @@
+apiVersion: policy.openservicemesh.io/v1alpha1
+kind: Egress
+metadata:
+  name: {{ .Release.Name }}-hosts-https-allow
+  namespace: {{ .Release.Namespace }}
+spec:
+  sources:
+    - kind: ServiceAccount
+      name: {{ .Release.Name }}-agent
+      namespace: {{ .Release.Namespace }}
+  hosts:
+    {{- range $key, $val := .Values.osm.hosts }}
+      - {{ toString $val | squote }}
+    {{- end }}
+  ports:
+    - number: 443
+      protocol: https
+---
+apiVersion: policy.openservicemesh.io/v1alpha1
+kind: Egress
+metadata:
+  name: {{ .Release.Name }}-azure-metadata-tcp-allow
+  namespace: {{ .Release.Namespace }}
+spec:
+  sources:
+    - kind: ServiceAccount
+      name: {{ .Release.Name }}-agent
+      namespace: {{ .Release.Namespace }}
+  ipAddresses:
+    - {{ .Values.calico.cidrs.aks.azureMetadata }}
+  ports:
+  - number: 80
+    protocol: tcp
+---
+apiVersion: policy.openservicemesh.io/v1alpha1
+kind: Egress
+metadata:
+  name: {{ .Release.Name }}-hosts-http-allow
+  namespace: {{ .Release.Namespace }}
+spec:
+  sources:
+    - kind: ServiceAccount
+      name: {{ .Release.Name }}-agent
+      namespace: {{ .Release.Namespace }}
+  hosts:
+    {{- range $key, $val := .Values.osm.httpOnlyHosts }}
+      - {{ toString $val | squote }}
+    {{- end }}
+  ports:
+    - number: 80
+      protocol: tcp

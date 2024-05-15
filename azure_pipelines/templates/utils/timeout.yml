@@ -1,0 +1,24 @@
+parameters:
+  - name: secondsToWait
+    displayName: Seconds to wait
+    type: string
+  - name: workingDirectory
+    displayName: Bash script working directory
+    type: string
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+
+steps:
+  - task: Bash@3
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    displayName: Waiting ${{ parameters.secondsToWait }} seconds
+    inputs:
+      targetType: 'inline'
+      workingDirectory: ${{ parameters.workingDirectory }}
+      script: |
+        echo "Waiting ${{ parameters.secondsToWait }} seconds..."
+        sleep ${{ parameters.secondsToWait }}
+        echo "Done!"

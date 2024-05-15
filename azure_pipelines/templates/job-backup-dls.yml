@@ -1,0 +1,48 @@
+parameters:
+  - name: backups
+    displayName: 'Array of backups'
+    type: object
+    default: []
+  - name: serviceConnectionName
+    displayName: 'Name of the DevOps Service Connection'
+    type: string
+  - name: execute
+    displayName: 'Execute this Job'
+    type: boolean
+    default: false
+  - name: environment
+    type: string
+    default: ''
+
+jobs:
+  - ${{ each backup in parameters.backups }}:
+    - deployment: backupStorageAccount_${{ backup.id }}
+      timeoutInMinutes: 600
+      workspace:
+          clean: all # what to clean up before the job runs
+      displayName: 'Backup ${{ backup.sourceFolder }}'
+
+      environment: ${{ parameters.environment }}
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+            - checkout: self
+            - task: AzurePowerShell@5
+              displayName: Run script to Backup
+              inputs:
+                azureSubscription: ${{ parameters.serviceConnectionName }}
+                ScriptType: 'FilePath'
+                ScriptPath: 'azure_pipelines/scripts/backup-dls.ps1'
+                ScriptArguments: >-
+                            -sourceStorageAccount '${{ backup.sourceStorageAccount }}'
+                            -targetStorageAccount '${{ backup.targetStorageAccount }}'
+                            -sourceFolder '${{ backup.sourceFolder }}'
+                            -targetFolder '${{ backup.targetFolder }}'
+                            -triggerPeriod: ${{ backup.triggerPeriod }}
+                            -azCopyConcurrency: ${{ backup.azCopyConcurrency }}
+                            -clientID: ${{ backup.clientID }}
+                            -clientSecret: ${{ backup.clientSecret }}
+                            -tenantID: ${{ backup.tenantID }}
+                azurePowerShellVersion: 'LatestVersion'
+                pwsh: true

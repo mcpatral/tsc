@@ -1,0 +1,49 @@
+parameters:
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+
+  - name: databricksPackageUploadPath
+    displayName: Path in databricks to upload artifacts
+    type: string
+
+  - name: artifactsDirectoryPath
+    displayName: Local path for artifacts
+    type: string
+
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+
+steps:
+  - task: AzureCLI@2
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    displayName: 'Uploading libraries'
+    inputs:
+      azureSubscription: '${{ parameters.azureServiceConnectionName }}'
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        echo "=============================================================================="
+        echo "List files to upload"
+        ls -ls  ${{ parameters.artifactsDirectoryPath }}
+        for file in ${{ parameters.artifactsDirectoryPath }}/*
+        do
+          if [ -f "$file" ]; then 
+            echo "=============================================================================="
+            echo "Uploading: $(basename $file)"
+            echo "=============================================================================="
+            databricks fs mkdir "dbfs:/${{ parameters.databricksPackageUploadPath }}"
+            command_output=$(databricks fs cp --overwrite -r "$file" "dbfs:/${{ parameters.databricksPackageUploadPath }}/$(basename $file)")
+            echo "$command_output"
+            # ------------ TODO: review errors ------------
+            if [[ $command_output == *"Error"* ]]; then
+              exit 1
+            fi
+          fi
+        done
+      workingDirectory: '$(System.DefaultWorkingDirectory)'
+    env:
+      AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)

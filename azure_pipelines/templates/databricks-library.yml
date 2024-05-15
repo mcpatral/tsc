@@ -1,0 +1,99 @@
+# File: templates/databricks-library.yml
+parameters:
+  - name: client_id
+    type: string
+
+  - name: client_secret
+    type: string
+
+  - name: tenant_id
+    type: string
+
+  - name: resource_group
+    type: string
+
+  - name: databricks_workspace
+    type: string
+
+  - name: azureSubscription
+    type: string
+
+  - name: whlDir
+    type: string
+
+  - name: databricks_cluster_name
+    type: string
+
+  - name: filePath
+    type: string
+
+  - name: copy_only
+    type: string
+
+  - name: remove_lib
+    type: string
+
+steps:
+- task: DownloadBuildArtifacts@1
+  displayName: 'Download Build Artifacts'
+  inputs:
+    artifactName: drop
+
+- task: UsePythonVersion@0
+  displayName: 'Use Python 3.10'
+  inputs:
+    versionSpec: 3.10
+
+- bash: |
+    python -m venv .venv
+    source .venv/bin/activate
+    python -m pip install --upgrade pip setuptools wheel
+    ls -la
+    cd '$(System.ArtifactsDirectory)'
+    absoluteArtifactsDirectory=$(echo $PWD)
+    echo "absoluteArtifactsDirectory=${absoluteArtifactsDirectory}"
+    ls -lR
+    echo "##vso[task.setvariable variable=absoluteArtifactsDirectory;]$absoluteArtifactsDirectory"
+  displayName: "Preparing Python env"
+
+- task: AzureCLI@2
+  inputs:
+    azureSubscription: ${{ parameters.azureSubscription }}
+    scriptType: 'pscore'
+    scriptLocation: 'inlineScript'
+    arguments: "-resourceGroupName ${{ parameters.resource_group }} -workspaceName ${{ parameters.databricks_workspace }}"
+    inlineScript: |
+      param ([string]$resourceGroupName, [string]$workspaceName)
+      $TenantId=(az account show| ConvertFrom-Json).tenantId
+      $RequestAccessTokenUri = "https://login.microsoftonline.com/$TenantId/oauth2/token"
+      $DBXressource = "2ff814a6-3304-4ab8-85cb-cd0e6f879c1d" # CF. AzureDatabricks AzureAD application. Seems unique for all Azure AD tenant.
+      # Get AzureDatabricks app token
+      $body = "grant_type=client_credentials&client_id=$env:AZURE_CLIENT_ID&client_secret=$env:AZURE_CLIENT_SECRET&resource=$DBXressource"
+      $auth = Invoke-RestMethod -Method Post -Uri $RequestAccessTokenUri -Body $body -ContentType 'application/x-www-form-urlencoded'
+      $myToken = $auth.access_token
+      az config set extension.use_dynamic_install=yes_without_prompt
+      # obtain the URL for databricks	
+      $workspaceUrl = az databricks workspace show --resource-group $resourceGroupName --name $workspaceName  --query workspaceUrl
+      $workspaceUrl = $workspaceUrl.Replace('"','')
+      $databricksURL = "https://" + $workspaceUrl
+      # export variables
+        echo databricksURL: $databricksURL
+        echo "##vso[task.setvariable variable=databricksURL]$databricksURL"
+        echo "##vso[task.setvariable variable=BearerToken]$myToken"
+  displayName: "Get databricksURL and BearerToken"
+  env:
+    AZURE_TENANT_ID: '${{ parameters.tenant_id }}'
+    AZURE_CLIENT_ID: '${{ parameters.client_id }}'
+    AZURE_CLIENT_SECRET: '${{ parameters.client_secret }}'
+
+- task: Bash@3
+  inputs:
+    filePath: ${{ parameters.filePath }}
+    arguments: >
+      -t $(BearerToken) 
+      -c ${{ parameters.databricks_cluster_name }} 
+      -u $(databricksURL) 
+      -d ${{ parameters.whlDir }} 
+      -s '$(absoluteArtifactsDirectory)/drop/*.whl'
+      ${{ parameters.copy_only }} ${{ parameters.remove_lib }} -v
+  displayName: "Bash Running databricks commands to deploy libs"

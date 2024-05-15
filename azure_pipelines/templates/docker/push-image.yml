@@ -1,0 +1,17 @@
+parameters:
+  - name: azureServiceConnectionName
+    type: string    
+  - name: registry
+    type: string
+  - name: repositoryName
+    type: string
+  - name: repositoryVersion
+    type: string
+steps:
+- task: Docker@1
+  displayName: 'Push Docker Image'
+  inputs:
+    azureSubscriptionEndpoint: ${{ parameters.azureServiceConnectionName }}
+    azureContainerRegistry: ${{ parameters.registry }}
+    imageName: ${{ parameters.repositoryName }}:${{ parameters.repositoryVersion }}
+    command: 'Push an image'

@@ -1,0 +1,198 @@
+parameters:
+- name: environmentName
+  displayName: Environment variable group name
+  type: string
+- name: usePairInfrastructure
+  displayName: Use Pair Infrastructure
+  default: false
+  type: boolean
+- name: rotateSaAirflowKey
+  type: boolean
+  default: false
+  displayName: Rotate keys for Airflow Storage Account
+# - name: rotateSaAmlKey
+#   type: boolean
+#   default: false
+#   displayName: Rotate keys for Aml Storage Account
+- name: rotateSaDlKey
+  type: boolean
+  default: false
+  displayName: Rotate keys for Dl Storage Account
+- name: rotateSaTempKey
+  type: boolean
+  default: false
+  displayName: Rotate keys for Temp Storage Account
+# - name: rotateSaVerticaKey
+#   type: boolean
+#   default: false
+#   displayName: Rotate keys for Vertica Storage Account
+- name: rotateSaCustomKey
+  type: string
+  default: 'none'
+  displayName: Rotate keys for a custom Storage Account
+
+variables:
+- group: ${{ parameters.environmentName }}
+- name: terraformVersion
+  value: "1.5.0"
+- name: kubectlVersion
+  value: "1.27.3"
+- name: helmVersion
+  value: "3.12.1"
+- name: terraformResourceGroupName
+  value: rg-$(terraform_in_environment_type)-$(terraform_in_project)-$(terraform_in_location_short)-state
+- name: terraformSaName
+  value: sa$(terraform_in_environment_type)$(terraform_in_project)$(terraform_in_location_short)tfstate
+- name: terraformBackendContainerName
+  value: $(terraform_in_environment_type)tfstate
+- name: masterKeyVaultName
+  value: kv-$(terraform_in_environment_type)-$(terraform_in_project)-$(terraform_in_location_short)-master
+- name: mainKeyVaultName
+  value: kv-$(terraform_in_environment_type)-$(terraform_in_project)-$(terraform_in_location_short)-main
+- name: paasResourceGroupName
+  value: rg-$(terraform_in_environment_type)-$(terraform_in_project)-$(terraform_in_location_short)
+- ${{ if eq(parameters.usePairInfrastructure, false) }}:
+  - name: azureDevOpsPool
+    value: ${{ parameters.environmentName }}-agentpool
+  - name: locationInfraShort
+    value: $(terraform_in_location_short)
+  - name: enablersModule
+    value: enablers
+  - name: infrastructureModule
+    value: infrastructure
+  - name: databricksAirflowPatTokenName
+    value: 'airflowdbwpattoken'
+  - name: saAirflowKeyName
+    value: 'saairflowkey'
+- ${{ if eq(parameters.usePairInfrastructure, true) }}:
+  - name: azureDevOpsPool
+    value: ${{ parameters.environmentName }}-pair-agentpool
+  - name: locationInfraShort
+    value: $(terraform_in_pair_location_short)
+  - name: enablersModule
+    value: pair_enablers
+  - name: infrastructureModule
+    value: pair_infrastructure
+  - name: databricksAirflowPatTokenName
+    value: 'airflowdbwpattokenpair'
+  - name: saAirflowKeyName
+    value: 'saairflowkeypair'
+
+trigger: none
+  
+stages: 
+- template: azure_pipelines/rotate-sa-keys-stages.yml
+  parameters:
+    azureServiceConnectionName: $(azure_service_principal_name)
+    pool: ${{ variables.azureDevOpsPool }}
+    resourceGroupName: ${{ variables.paasResourceGroupName }}
+    keyVaultName: ${{ variables.mainKeyVaultName }}
+    storageAccounts:
+      - ${{ if eq(parameters.rotateSaAirflowKey, true) }}:
+        - saName: sa$(terraform_in_environment_type)$(terraform_in_project)$(locationInfraShort)airflow
+          keyVaultSecretName: ${{ variables.saAirflowKeyName }}
+      # - ${{ if eq(parameters.rotateSaAmlKey, true) }}:
+      #   - saName: sa$(terraform_in_environment_type)$(terraform_in_project)$(locationInfraShort)aml
+      #     keyVaultSecretName: saamlkey
+      - ${{ if eq(parameters.rotateSaDlKey, true) }}:
+        - saName: sa$(terraform_in_environment_type)$(terraform_in_project)$(terraform_in_location_short)dl
+          keyVaultSecretName: sadlkey
+      - ${{ if eq(parameters.rotateSaTempKey, true) }}:
+        - saName: sa$(terraform_in_environment_type)$(terraform_in_project)$(terraform_in_location_short)temp
+          keyVaultSecretName: satempkey
+      # - ${{ if eq(parameters.rotateSaVerticaKey, true) }}:
+      #   - saName: sa$(terraform_in_environment_type)$(terraform_in_project)$(terraform_in_location_short)vertica
+      #     keyVaultSecretName: saverticakey
+      - ${{ if ne(parameters.rotateSaCustomKey, 'none') }}:
+        - saName: sa$(terraform_in_environment_type)$(terraform_in_project)$(terraform_in_location_short)${{ parameters.rotateSaCustomKey }}
+          keyVaultSecretName: sa${{ parameters.rotateSaCustomKey }}key
+
+# - ${{ if or(eq(parameters.rotateSaVerticaKey, true), eq(parameters.rotateSaCustomKey, 'vertica')) }}:
+#   - template: azure_pipelines/vertica-stages.yml
+#     parameters:
+#       pool: ${{ variables.azureDevOpsPool }} 
+#       azureServiceConnectionName: $(azure_service_principal_name)
+#       terraformVersion: ${{ variables.terraformVersion }}
+#       kubectlVersion: ${{ variables.kubectlVersion }}
+#       helmVersion: ${{ variables.helmVersion }}
+#       helmReleaseName: $(vertica_helm_release_name)
+#       helmNamespace: $(vertica_namespace)
+#       airflowNamespace: $(airflow_namespace)
+#       resourceGroupName: $(mainResourceGroupName)
+#       dnsZoneSubscriptionID: $(private_dns_zone_subscription_id)
+#       dnsZoneResourceGroupName: $(private_dns_zone_resource_group)
+#       terraformResourceGroupName: ${{ variables.terraformResourceGroupName }}
+#       terraformSaName: ${{ variables.terraformSaName }}
+#       terraformBackendContainerName: ${{ variables.terraformBackendContainerName }}
+#       keyVaultName: ${{ variables.mainKeyVaultName }}
+#       keyVaultSecretNames: 
+#         - verticatlskey
+#         - verticatlscrt
+#         - verticatlscakey
+#         - verticatlscacrt
+#         - verticatlswebhookkey
+#         - verticatlswebhookcrt
+#         - verticasupassword
+#         - saverticakey
+#       saPublicAccessUpdate: false
+#       verticaTag: $(vertica_tag)
+#       verticaLoggerTag: $(vertica_logger_tag)
+#       verticaOperatorTag: $(vertica_operator_tag)
+#       enablersModule: ${{ variables.enablersModule }}
+#       infrastructureModule: ${{ variables.infrastructureModule }}
+#       condition: and(not(failed()), not(canceled()))
+#       dependsOn:
+#         - rotate_keys_stage
+
+- ${{ if or(eq(parameters.rotateSaAirflowKey, true), eq(parameters.rotateSaCustomKey, 'airflow')) }}:
+  - template: azure_pipelines/airflow-stages.yml
+    parameters:
+      pool: ${{ variables.azureDevOpsPool }} 
+      azureServiceConnectionName: $(azure_service_principal_name)
+      terraformVersion: ${{ variables.terraformVersion }}
+      kubectlVersion: ${{ variables.kubectlVersion }}
+      helmVersion: ${{ variables.helmVersion }}
+      osmVersion: $(osm_version)
+      dnsZoneSubscriptionID: $(private_dns_zone_subscription_id)
+      dnsZoneResourceGroupName: $(private_dns_zone_resource_group)
+      terraformResourceGroupName: ${{ variables.terraformResourceGroupName }}
+      terraformSaName: ${{ variables.terraformSaName }}
+      terraformBackendContainerName: ${{ variables.terraformBackendContainerName }}
+      keyVaultName: ${{ variables.mainKeyVaultName }}
+      keyVaultSecretNames:
+        # - verticadbwritername
+        # - verticadbwriterpassword 
+        - airflowoauthspnclientid
+        - airflowoauthspnclientsecret
+        - airflowtenantid     
+        - psqlairflowuser
+        - psqlairflowpwd
+        - airflowfernetkey
+        - airflowpwd 
+        - ${{ variables.databricksAirflowPatTokenName }}
+        - ${{ variables.saAirflowKeyName }}
+        - clienttlskey
+        - clienttlscrt
+        - airflowsmtpclientsecret
+        - airflowsmtpclientid
+      saPublicAccessUpdate: false
+      airflowTag: $(airflow_tag)
+      pgBouncerTag: $(pg_bouncer_tag)
+      envoySidecarHelperTag: $(envoy_helper_tag)
+      helmReleaseName: $(airflow_helm_release_name)
+      helmNamespace: $(airflow_namespace)
+      ingressControllerName: $(ingress_helm_release_name)
+      ingressControllerNamespace: $(ingress_namespace)
+      # verticaNamespace: $(vertica_namespace)
+      enablersModule: ${{ variables.enablersModule }}
+      infrastructureModule: ${{ variables.infrastructureModule }}
+      databricksPatTokenName: ${{ variables.databricksAirflowPatTokenName }}
+      airflowViewerGroupName: $(airflow_viewer_group_name)
+      airflowUserGroupName: $(airflow_user_group_name)
+      airflowAdminGroupName: $(airflow_admin_group_name)
+      vnetPeered: $(terraform_in_vnet_peered)
+      condition: and(not(failed()), not(canceled()))
+      dependsOn:
+        - rotate_keys_stage
+        # - ${{ if or(eq(parameters.rotateSaVerticaKey, true), eq(parameters.rotateSaCustomKey, 'vertica')) }}:
+        #   - vertica_deployment

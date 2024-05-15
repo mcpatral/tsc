@@ -1,0 +1,102 @@
+trigger:
+- none
+
+schedules:
+- cron: '5 17 * * 1-5'
+  displayName: Daily midnight build
+  always: true
+  branches:
+    include:
+    - main
+
+parameters:
+  - name: versionToSet
+    displayName: Airflow Version to set
+    type: string
+    default: 2.9.1-python3.10-latest
+  - name: azureServiceConnectionName
+    type: string
+    default: 'sc_datamngtdev_poc'
+  - name: azureContainerRegistry
+    type: string
+    default: 'acrdevdaweucentralmanual'
+  - name: azureGlobalContainerRegistry
+    type: string
+    default: 'acrdevdaweucentralmanual'
+  - name: azureGlobalContainerRegistryRg
+    type: string
+    default: 'rg-dev-da-weu-central-manual'
+  - name: environmentName
+    displayName: where to build
+    type: string
+    default: dev
+    
+variables:
+  - group: ${{ parameters.environmentName }}
+  - name: project_name
+    value: igtpoc
+  - name: common_feed_name
+    value: common         
+  - name: aksDevOpsNamespace
+    value: ${{ parameters.environmentName }}-agentpool    
+  - name: terraformVersion
+    value: "1.5.0"
+  - name: terraformResourceGroupName
+    value: rg-$(terraform_in_environment_type)-$(terraform_in_project)-$(terraform_in_location_short)-state
+  - name: terraformSaName
+    value: sa$(terraform_in_environment_type)$(terraform_in_project)$(terraform_in_location_short)tfstate        
+  - name: terraformBackendContainerName
+    value: $(terraform_in_environment_type)tfstate
+  - name: csvFilePath
+    value: './libs_version/databricks_packages.csv'
+
+resources:
+  repositories:
+  - repository: shared-resources
+    type: git
+    name: igtpoc/shared-resources
+    ref: main
+
+stages:
+- stage: Build_and_Push
+  displayName: Build and Push image
+  pool: 
+    name: ${{ variables.aksDevOpsNamespace }} 
+  jobs:
+  - job: build_and_push
+    displayName: Build and Push image
+    steps:
+      - checkout: self
+        path: s/
+      - checkout: shared-resources
+        path: s/shared-resources
+
+      - template: ../azure_pipelines/templates/databricks/databricks-get-package-version-from-csv.yml
+        parameters:
+          csvFilePath: ${{ variables.csvFilePath }} 
+          workingDirectory: $(System.DefaultWorkingDirectory)/shared-resources
+
+      - template: ../azure_pipelines/templates/download-wheels-packages.yml
+        parameters:
+          azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+          artifactsDirectoryPath: $(System.DefaultWorkingDirectory)/docker/airflow/airflow
+          packageAndVersion: 'igt-schemas==$(igt_schemas_package_version)'
+          dependsOn: build_and_push
+
+      - template: ../azure_pipelines/templates/docker-steps.yml
+        parameters: 
+          versionToSet: ${{ parameters.versionToSet }}
+          dockerDirectory: $(System.DefaultWorkingDirectory)/docker/airflow/airflow
+          azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+          azureContainerRegistry: ${{ parameters.azureContainerRegistry }}
+          imageName: airflow
+          azureGlobalContainerRegistry: ${{ parameters.azureGlobalContainerRegistry }}
+          azureGlobalContainerRegistryRg: ${{ parameters.azureGlobalContainerRegistryRg }}
+          dockerArgs: '--build-arg FILENAME=$(igt_schemas_filename)'
+          aksDevOpsNamespace: ${{ variables.aksDevOpsNamespace }} 
+          terraformVersion: ${{ variables.terraformVersion }} 
+          terraformResourceGroupName: ${{ variables.terraformResourceGroupName }}
+          terraformSaName: ${{ variables.terraformSaName }}
+          terraformBackendContainerName: ${{ variables.terraformBackendContainerName }}          
+          dependsOn: download_wheels
+          buildxTag: $(buildx_tag)          

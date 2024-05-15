@@ -1,0 +1,25 @@
+parameters:
+  - name: workingDirectory
+    displayName: Script working directory
+    type: string
+    default: $(System.DefaultWorkingDirectory)
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+
+steps:
+  - task: Bash@3
+    displayName: Checking connectivity to cluster
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    inputs:
+      targetType: 'inline'
+      script: |
+        echo "Checking connectivity to Kubernetes cluster..."
+        for i in {1..10}
+        do
+          kubectl get ns && break || echo "Attempt $i. Failed with $? exit code. Retrying in 15 seconds..."
+          sleep 15
+        done
+      workingDirectory: ${{ parameters.workingDirectory }}

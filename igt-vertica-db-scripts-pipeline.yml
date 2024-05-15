@@ -1,0 +1,236 @@
+# TODO include pair infrastructure in variables as in other pipelines.
+parameters:
+  - name: branchName
+    type: string
+  - name: environmentName
+    type: string
+  - name: createArtifact
+    type: boolean
+  - name: publishArtifact
+    type: boolean
+  - name: runVerticaDatabaseSqlScripts
+    type: boolean
+  - name: runDdlGenerator
+    type: boolean
+  - name: additionalArgsDdlGenerator
+    type: string
+  - name: forcedReleaseType
+    type: string
+  - name: usePairInfrastructure
+    type: boolean
+  - name: keyVaultSecretNames
+    displayName: Key vault secret names
+    type: object
+    default: 
+      # - verticasuname
+      # - verticasupassword 
+      # - verticatlskey
+      # - verticatlscrt
+      - clienttlskey
+      - clienttlscrt
+
+variables:
+  - group: ${{ parameters.environmentName }}
+  - name: terraformVersion
+    value: "1.5.0"
+  - name: kubectlVersion
+    value: "1.27.3"
+  - name: terraformResourceGroupName
+    value: rg-$(terraform_in_environment_type)-$(terraform_in_project)-$(terraform_in_location_short)-state
+  - name: terraformSaName
+    value: sa$(terraform_in_environment_type)$(terraform_in_project)$(terraform_in_location_short)tfstate
+  - name: terraformBackendContainerName
+    value: $(terraform_in_environment_type)tfstate
+  - name: keyVaultName
+    value: kv-$(terraform_in_environment_type)-$(terraform_in_project)-$(terraform_in_location_short)-main
+  - name: artifactsDirectory
+    value: 'artifacts'
+  - name: devArtifactBuildCommand
+    value: 'python3 setup.py bdist_wheel'
+  - name: packageSuffix
+    value: 'py3-none-any'
+  - name: packageType
+    value: 'whl'
+  - name: pyBuildRequirementsPath
+    value: 'devops/python/requirements_build.txt'
+  - name: verticaClientVersion
+    value: "12.0.4-0"
+  - name: verticaDatabasePort
+    value: "5433"
+  - name: pyDdlScriptsDependenciesRequirementsPath
+    value: 'python/vertica-ddl-scripts/requirements_dependencies.txt'
+  - name: pyDdlScriptsRequirementsPath
+    value: 'python/vertica-ddl-scripts/requirements.txt'
+  - name: commitTag
+    value: true
+  - name: releaseTypeParameters
+    ${{ if ne(parameters['forcedReleaseType'], 'automatic') }}:
+      value: "--${{ parameters.forcedReleaseType }}"
+  - ${{ if parameters.usePairInfrastructure }}:
+    - name: azureDevOpsPool
+      value: ${{ parameters.environmentName }}-pair-agentpool
+    - name: locationInfraShort
+      value: $(terraform_in_pair_location_short)
+    - name: enablersModule
+      value: pair_enablers
+    - name: infrastructureModule
+      value: pair_infrastructure
+  - ${{ else }}:
+    - name: azureDevOpsPool
+      value: ${{ parameters.environmentName }}-agentpool
+    - name: locationInfraShort
+      value: $(terraform_in_location_short)
+    - name: enablersModule
+      value: enablers
+    - name: infrastructureModule
+      value: infrastructure
+  
+stages:
+  - stage: Build
+    condition: |
+      and(
+        ${{ parameters.createArtifact }},
+        ne(variables['Build.Reason'], 'PullRequest')
+      )
+    pool: 
+      ${{ if eq(variables['azureDevOpsPool'], 'ubuntu-latest') }}:
+        vmImage: ${{ variables.azureDevOpsPool }}
+      ${{ else }}:
+        name: ${{ variables.azureDevOpsPool }}
+    jobs:
+    - job: BuildArtifact
+      workspace:
+        clean: all
+      steps:
+      - template: azure_pipelines/templates/build-python-artifact-release.yml@devops
+        parameters:
+          branchName: ${{ parameters.branchName }}
+          pyBuildRequirementsPath: ${{ variables.pyBuildRequirementsPath }}
+          releaseAdditionalParameters: ${{ variables.releaseTypeParameters }} -D tag_commit=${{ variables.commitTag }} -D branch=${{ parameters.branchName }}
+          buildCommand: ${{ variables.devArtifactBuildCommand }}
+          packageSuffix: ${{ variables.packageSuffix }}
+          packageType: ${{ variables.packageType }}
+          artifactsDirectory: ${{ variables.artifactsDirectory }}
+          workingDirectory: $(Build.SourcesDirectory)
+      displayName: 'Build artifact'
+
+  - stage: PublishFeed
+    dependsOn: Build
+    condition: |
+      and(
+        succeeded('Build'), 
+        ${{ parameters.publishArtifact }}
+      )
+    pool: 
+      ${{ if eq(variables['azureDevOpsPool'], 'ubuntu-latest') }}:
+        vmImage: ${{ variables.azureDevOpsPool }}
+      ${{ else }}:
+        name: ${{ variables.azureDevOpsPool }}
+    jobs:
+    - job:
+      steps:
+      - template: azure_pipelines/templates/publish-feed-whl.yml
+        parameters:
+          feedServiceConnectionName: $(common_feed_service_principal_name)
+          projectName: $(project_name)
+          feedName: $(common_feed_name)
+          artifactsDirectory: '${{ variables.artifactsDirectory }}'
+          packageType: '${{ variables.packageType }}'
+      displayName: 'Publish artifact to azure feed'
+
+  - stage: DatabaseScriptExecution
+    condition: ${{ parameters.runVerticaDatabaseSqlScripts }}
+    pool: 
+      ${{ if eq(variables['azureDevOpsPool'], 'ubuntu-latest') }}:
+        vmImage: ${{ variables.azureDevOpsPool }}
+      ${{ else }}:
+        name: ${{ variables.azureDevOpsPool }}
+    jobs:
+    - job:
+      displayName: 'DDL scripts execution'
+      workspace:
+        clean: all
+      steps:
+      - checkout: self
+      - checkout: devops
+
+      - template: azure_pipelines/templates/python/pip-authenticate.yml
+        parameters:
+          projectName: $(project_name)
+          feedName: $(common_feed_name)
+
+      - template: azure_pipelines/templates/terraform-outputs.yml
+        parameters:
+          azureServiceConnectionName: $(azure_service_principal_name)
+          workingDirectory: $(Build.SourcesDirectory)/devops/terraform/${{ variables.enablersModule }}
+          terraformVersion: ${{ variables.terraformVersion }}
+          terraformResourceGroupName: ${{ variables.terraformResourceGroupName }}
+          terraformSaName: ${{ variables.terraformSaName }}
+          terraformBackendContainerName: ${{ variables.terraformBackendContainerName }}
+
+      - template: azure_pipelines/templates/terraform-outputs.yml
+        parameters:
+          azureServiceConnectionName: $(azure_service_principal_name)
+          workingDirectory: $(Build.SourcesDirectory)/devops/terraform/${{ variables.infrastructureModule }}
+          terraformVersion: ${{ variables.terraformVersion }}
+          terraformResourceGroupName: ${{ variables.terraformResourceGroupName }}
+          terraformSaName: ${{ variables.terraformSaName }}
+          terraformBackendContainerName: ${{ variables.terraformBackendContainerName }}
+
+      - template: azure_pipelines/templates/azcli/aks-get-credentials.yml
+        parameters:
+          aksClusterName: $(terraform_out_aks_cluster_name_main)
+          aksClusterResourceGroup: $(terraform_out_aks_cluster_resource_group_name_main)
+          azureServiceConnectionName: $(azure_service_principal_name)
+          workingDirectory: "$(Build.SourcesDirectory)/devops"
+
+      - template: azure_pipelines/templates/azcli/kv-get-secrets.yml
+        parameters:
+          azureServiceConnectionName: $(azure_service_principal_name)
+          keyVaultName: ${{ variables.keyVaultName }}
+          keyVaultSecretNames: ${{ parameters.keyVaultSecretNames }}
+
+      - template: azure_pipelines/templates/utils/binary-install.yml
+        parameters:
+          binaryName: vsql
+          binaryVersion: ${{ variables.verticaClientVersion }}
+          validationCommand: vsql --version
+
+      - template: azure_pipelines/templates/python/pip-install-package.yml
+        parameters:
+          commandArgs: '-r $(Build.SourcesDirectory)/devops/${{ variables.pyDdlScriptsDependenciesRequirementsPath }}'
+
+      - template: azure_pipelines/templates/vertica/ddl-scripts-execution.yml
+        parameters:
+          ddlExecutorPath: vertica_encrypt/enable.sh
+          verticaArguments: >-
+            "vertica.$(terraform_out_private_dns_zone_name_intrum)"
+            ${{ variables.verticaDatabasePort }}
+            $(verticasuname)
+            $(verticasupassword)
+            "$(Build.SourcesDirectory)/vertica-db-scripts/vertica_encrypt"
+            "$(verticatlskey)"
+            "$(verticatlscrt)"
+            "$(clienttlskey)"
+            "$(clienttlscrt)"
+          workingDirectory: "$(Build.SourcesDirectory)/vertica-db-scripts"
+    
+      - ${{ if parameters.runDdlGenerator }}:
+        - template: azure_pipelines/templates/vertica/generate-ddl-scripts.yml
+          parameters:
+            ddlGeneratorPath: vertica_ddl_generator/vertica_ddl_generator.py
+            additionalArgsDdlGenerator: ${{ parameters.additionalArgsDdlGenerator }}
+            workingDirectory: "$(Build.SourcesDirectory)/vertica-db-scripts"
+
+      - template: azure_pipelines/templates/vertica/ddl-scripts-execution.yml
+        parameters:
+          ddlExecutorPath: vertica_ddl_executor/run_ddls.sh
+          verticaArguments: >-
+            $(terraform_in_environment_type)
+            "vertica.$(terraform_out_private_dns_zone_name_intrum)"
+            ${{ variables.verticaDatabasePort }}
+            $(verticasuname)
+            $(verticasupassword)
+            "$(Build.SourcesDirectory)/vertica-db-scripts/ddl_files"
+            "$(Build.SourcesDirectory)/vertica-db-scripts/genereated_ddl_files"
+          workingDirectory: "$(Build.SourcesDirectory)/vertica-db-scripts"

@@ -1,0 +1,90 @@
+parameters:
+  - name: azureServiceConnectionName
+    type: string
+  - name: terraformVersion
+    type: string
+  - name: terraformResourceGroupName
+    type: string
+  - name: terraformSaName
+    type: string
+  - name: terraformBackendContainerName
+    type: string
+  - name: mainResourceGroupName
+    type: string
+  - name: infrastructureModule
+    type: string
+  - name: notebookLanguage
+    type: string
+  - name: miscScriptsFolder
+    type: string
+  - name: miscScriptsLocalPath
+    type: string
+  - name: miscScriptsRequirementsPath
+    type: string
+  - name: databricksRemotePath
+    type: string
+  - name: devopsRepositoryCheckout
+    type: string
+  - name: sharedResourcesRepositoryCheckout
+    type: string
+  - name: pool
+    type: string
+  - name: workingDirectory
+    type: string
+  - name: dependsOn
+    type: object
+    default: []
+  - name: condition
+    displayName: Condition to run the stage
+    type: string
+    default: ""
+
+stages:
+  - stage: databricks_upload_misc_scripts
+    displayName: 'Upload misc scripts to Databricks'
+    dependsOn: ${{ parameters.dependsOn }}
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    jobs:
+      - job: databricks_upload_notebook
+        displayName: 'Upload misc scripts to Databricks'
+        pool: 
+          ${{ if ne(parameters['pool'], 'ubuntu-latest') }}:
+            name: ${{ parameters.pool }}
+          ${{ if eq(parameters['pool'], 'ubuntu-latest') }}:
+            vmImage: ${{ parameters.pool }}
+        steps:
+          - checkout: ${{ parameters.devopsRepositoryCheckout }}
+            path: s/
+          - checkout: ${{ parameters.sharedResourcesRepositoryCheckout }}
+            path: s/${{ parameters.sharedResourcesRepositoryCheckout }}
+
+          - template: templates/terraform-outputs.yml
+            parameters:
+              azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+              workingDirectory: $(System.DefaultWorkingDirectory)/terraform/${{ parameters.infrastructureModule }}
+              terraformVersion: ${{ parameters.terraformVersion }}
+              terraformResourceGroupName: ${{ parameters.terraformResourceGroupName }}
+              terraformSaName: ${{ parameters.terraformSaName }}
+              terraformBackendContainerName: ${{ parameters.terraformBackendContainerName }}
+
+          - template: templates/databricks/databricks-installation-and-login.yml
+            parameters:
+              azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+              resourceGroupName: ${{ parameters.mainResourceGroupName }}
+              databricksWorkspaceName: $(terraform_out_db_workspace_name)
+
+          - template: templates/python/pip-authenticate.yml
+            parameters:
+              projectName: $(project_name)
+              feedName: $(common_feed_name)
+
+          - template: templates/python/pip-install-package.yml
+            parameters:
+              commandArgs: '-r ${{ parameters.workingDirectory }}/${{ parameters.miscScriptsRequirementsPath }} --target=${{ parameters.workingDirectory }}'
+
+          - template: templates/databricks/databricks-non-notebook-upload.yml
+            parameters:
+              notebookLanguage: ${{ parameters.notebookLanguage }}
+              notebookLocalPath: ${{ parameters.miscScriptsLocalPath }}
+              databricksRemotePath: ${{ parameters.databricksRemotePath }}

@@ -1,0 +1,55 @@
+parameters:
+  - name: kvName
+    displayName: KV name
+    type: string
+  - name: resourceGroupName
+    displayName: KV resource group name
+    type: string
+  - name: ipRange
+    displayName: IPv4 address or CIDR range.
+    type: string
+  - name: action
+    displayName: Action for az acr network-rule
+    type: string
+    values:
+      - add
+      - remove
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+  - name: waitAfterUpdate
+    displayName: Azure CLI working directory
+    type: boolean
+    default: false
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+  - name: workingDirectory
+    displayName: Azure CLI working directory
+    type: string
+
+steps:
+  - task: AzureCLI@2
+    displayName: Update KV network rules
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        az keyvault network-rule ${{ parameters.action }} --name ${{ parameters.kvName }} --resource-group ${{ parameters.resourceGroupName }} --ip-address ${{ parameters.ipRange }} --query 'networkRuleSet.ipRules[].ipAddressOrRange'
+        if [[ $? -ne 0 ]]; then
+          echo "##vso[task.logissue type=error;]error updating KV network rules"
+          exit 1
+        fi
+        echo "##vso[task.setvariable variable=updatedKvAccess]true"
+      workingDirectory: ${{ parameters.workingDirectory }}
+
+  - ${{ if parameters.waitAfterUpdate }}:
+    - template: ../utils/timeout.yml
+      parameters:
+        secondsToWait: "30" # Waiting for rules to be applied
+        workingDirectory: $(System.DefaultWorkingDirectory)
+        condition: ${{ parameters.condition }}

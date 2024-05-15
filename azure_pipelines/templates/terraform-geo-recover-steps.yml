@@ -1,0 +1,193 @@
+parameters:
+- name: azureServiceConnectionName
+  type: string
+- name: terraformVersion
+  type: string
+- name: terraformResourceGroupName
+  displayName: Resource group for TF
+  type: string
+- name: terraformSaName
+  displayName: Storage Account name for TF
+  type: string
+- name: terraformBackendContainerName
+  displayName: Container name for TF
+  type: string
+- name: saPublicAccessUpdate
+  displayName: SA Public Access Update
+  type: boolean
+- name: mainResourceGroupName
+  displayName: Main resource group name
+  type: string
+- name: location
+  displayName: Location
+  type: string
+- name: enablersModule
+  displayName: Enablers module name
+  type: string
+- name: infrastructureModule
+  displayName: Infrastructure module name
+  type: string
+- name: sourceInfrastructureModule
+  displayName: Source infrastructure module name
+  type: string
+- name: postgresServerName
+  displayName: Postgres Server Name
+  type: string
+- name: postgresSubnetName
+  displayName: Target Postgres Subnet Name
+  type: string
+- name: geoRecoverTo
+  displayName: Recover to
+  type: string
+- name: mainPipelineExecution
+  displayName: Main pipeline execution
+  type: boolean
+  default: false
+
+steps:
+- ${{ if eq(parameters.geoRecoverTo, 'main') }}:
+  - template: azcli/resource-delete.yml
+    parameters:
+      azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+      resourceName: ${{ parameters.postgresServerName }}
+      resourceGroupName: ${{ parameters.mainResourceGroupName }}
+      resourceType: "Microsoft.DBforPostgreSQL/flexibleServers"
+      workingDirectory: $(System.DefaultWorkingDirectory)
+      stepNameSubstring: postgresql_server
+      condition: and(not(failed()), not(canceled()))
+
+  - template: utils/timeout.yml
+    parameters:
+      secondsToWait: "600"
+      workingDirectory: $(System.DefaultWorkingDirectory)
+      condition: and(not(failed()), not(canceled()), eq(variables['deleted_resource_env'], 'yes'))
+
+- template: azcli/resource-show-property.yml
+  parameters:
+    azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+    resourceName: ${{ parameters.postgresServerName }}
+    resourceGroupName: ${{ parameters.mainResourceGroupName }}
+    resourceType: "Microsoft.DBforPostgreSQL/flexibleServers"
+    workingDirectory: $(System.DefaultWorkingDirectory)
+    propertyAddress: id
+
+- ${{ if not(parameters.mainPipelineExecution) }}:
+  - template: utils/terraform-var-and-commandoptions.yml
+
+- ${{ if parameters.saPublicAccessUpdate }}:
+  - template: azcli/sa-update-public-network-access.yml
+    parameters:
+      azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+      resourceGroupName:  ${{ parameters.terraformResourceGroupName }}
+      workingDirectory: $(System.DefaultWorkingDirectory)
+      saName: ${{ parameters.terraformSaName }}
+      publicAccess: Enabled
+      waitAfterUpdate: true
+      condition: and(not(failed()), not(canceled()))
+
+- template: terraform-outputs.yml
+  parameters:
+    azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+    workingDirectory: $(System.DefaultWorkingDirectory)/terraform/${{ parameters.enablersModule }}
+    terraformVersion: ${{ parameters.terraformVersion }}
+    terraformResourceGroupName: ${{ parameters.terraformResourceGroupName }}
+    terraformSaName: ${{ parameters.terraformSaName }}
+    terraformBackendContainerName: ${{ parameters.terraformBackendContainerName }}
+    condition: and(not(failed()), not(canceled()))
+
+- template: terraform-outputs.yml
+  parameters:
+    azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+    workingDirectory: $(System.DefaultWorkingDirectory)/terraform/${{ parameters.sourceInfrastructureModule }}
+    terraformVersion: ${{ parameters.terraformVersion }}
+    terraformResourceGroupName: ${{ parameters.terraformResourceGroupName }}
+    terraformSaName: ${{ parameters.terraformSaName }}
+    terraformBackendContainerName: ${{ parameters.terraformBackendContainerName }}
+    condition: and(not(failed()), not(canceled()))
+
+- template: azcli/postgres-flexible-server-geo-restore.yml
+  parameters:
+    azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+    workingDirectory: $(System.DefaultWorkingDirectory)
+    resourceGroupName: ${{ parameters.mainResourceGroupName }}
+    location: ${{ parameters.location }}
+    zone: 1
+    postgresqlServerName: ${{ parameters.postgresServerName }}
+    postgresqlSourceServerId: $(terraform_out_psql_server_id)
+    postgresSubnetIDEnvVarName: terraform_out_networks_vnet_subnets_${{ parameters.postgresSubnetName }}
+    postgresPrivateDnsZoneId: $(terraform_out_private_dns_zone_id_postgres)
+    geoRedundantBackup: Enabled
+    condition: and(not(failed()), not(canceled()), eq(variables['resource_property'], ''))
+
+# - ${{ if eq(parameters.geoRecoverTo, 'pair') }}:
+#   - bash: |
+#       echo "exporting $(resource_property)"
+#       echo "##vso[task.setvariable variable=resource_id_bash_task]$(resource_property)"
+#     displayName: 'Export resource_property to resource_id_bash_task'
+#     condition: ne(variables['resource_property'], '')
+
+#   - bash: |
+#       echo "exporting $(postgresql_resource_id)"
+#       echo "##vso[task.setvariable variable=resource_id_bash_task]$(postgresql_resource_id)"
+#     displayName: 'Export postgresql_resource_id to resource_id_bash_task'
+#     condition: ne(variables['postgresql_resource_id'], '')
+
+#   - bash: |
+#       echo "##vso[task.setvariable variable=terraform_out_psql_server_id]"""
+#     displayName: 'Empty terraform_out_psql_server_id variable'
+
+#   - template: terraform-outputs.yml
+#     parameters:
+#       azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+#       workingDirectory: $(System.DefaultWorkingDirectory)/terraform/${{ parameters.infrastructureModule }}
+#       terraformVersion: ${{ parameters.terraformVersion }}
+#       terraformResourceGroupName: ${{ parameters.terraformResourceGroupName }}
+#       terraformSaName: ${{ parameters.terraformSaName }}
+#       terraformBackendContainerName: ${{ parameters.terraformBackendContainerName }}
+#       condition: and(not(failed()), not(canceled()))
+
+#   - template: terraform/import.yml
+#     parameters:
+#       workingDirectory: $(System.DefaultWorkingDirectory)/terraform/${{ parameters.infrastructureModule }}
+#       azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+#       terraformVersion: ${{ parameters.terraformVersion }}
+#       terraformResourceGroupName: ${{ parameters.terraformResourceGroupName }}
+#       terraformSaName: ${{ parameters.terraformSaName }}
+#       terraformBackendContainerName: ${{ parameters.terraformBackendContainerName }}
+#       tfstateTargetResourceAddress: "module.postgresql[\"${{ parameters.postgresServerName }}\"].azurerm_postgresql_flexible_server.flexsrv"
+#       resourceId: $(resource_id_bash_task)
+#       condition: and(not(failed()), not(canceled()), eq(variables['terraform_out_psql_server_id'], ''))
+
+#   - template: terraform/import.yml
+#     parameters:
+#       workingDirectory: $(System.DefaultWorkingDirectory)/terraform/${{ parameters.infrastructureModule }}
+#       azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+#       terraformVersion: ${{ parameters.terraformVersion }}
+#       terraformResourceGroupName: ${{ parameters.terraformResourceGroupName }}
+#       terraformSaName: ${{ parameters.terraformSaName }}
+#       terraformBackendContainerName: ${{ parameters.terraformBackendContainerName }}
+#       tfstateTargetResourceAddress: "module.postgresql[\"${{ parameters.postgresServerName }}\"].azurerm_postgresql_flexible_server_database.database"
+#       resourceId: "$(resource_id_bash_task)/databases/airflow"
+#       condition: and(not(failed()), not(canceled()), eq(variables['terraform_out_psql_server_id'], ''))
+
+#   - template: terraform/import.yml
+#     parameters:
+#       workingDirectory: $(System.DefaultWorkingDirectory)/terraform/${{ parameters.infrastructureModule }}
+#       azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+#       terraformVersion: ${{ parameters.terraformVersion }}
+#       terraformResourceGroupName: ${{ parameters.terraformResourceGroupName }}
+#       terraformSaName: ${{ parameters.terraformSaName }}
+#       terraformBackendContainerName: ${{ parameters.terraformBackendContainerName }}
+#       tfstateTargetResourceAddress: "module.postgresql[\"${{ parameters.postgresServerName }}\"].azurerm_postgresql_flexible_server_active_directory_administrator.psql_aad_admin"
+#       resourceId: "$(resource_id_bash_task)/administrators/a38248e2-add3-444d-ad84-e4d74b720b41"
+#       condition: and(not(failed()), not(canceled()), eq(variables['terraform_out_psql_server_id'], ''))
+
+- template: azcli/sa-update-public-network-access.yml
+  parameters:
+    azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+    resourceGroupName:  ${{ parameters.terraformResourceGroupName }}
+    workingDirectory: $(System.DefaultWorkingDirectory)
+    saName: ${{ parameters.terraformSaName }}
+    publicAccess: Disabled
+    waitAfterUpdate: false
+    condition: or (always(), canceled())

@@ -1,0 +1,67 @@
+apiVersion: policy.openservicemesh.io/v1alpha1
+kind: Egress
+metadata:
+  name: hosts-https-allow
+  namespace: {{ .Release.Namespace }}
+spec:
+  sources:
+    - kind: ServiceAccount
+      name: {{ .Values.airflow.serviceAccount.name }}
+      namespace: {{ .Release.Namespace }}
+  hosts:
+    {{- range $key, $val := .Values.osm.hosts.tls }}
+      - {{ $val }}
+    {{- end }}
+  ports:
+    - number: 443
+      protocol: https
+---
+apiVersion: policy.openservicemesh.io/v1alpha1
+kind: Egress
+metadata:
+  name: metadata-tcp-allow
+  namespace: {{ .Release.Namespace }}
+spec:
+  sources:
+    - kind: ServiceAccount
+      name: {{ .Values.airflow.serviceAccount.name }}
+      namespace: {{ .Release.Namespace }}
+  ipAddresses:
+    - {{ .Values.calico.cidrs.metadata.endpoint }}
+  ports:
+  - number: 80
+    protocol: tcp
+---
+apiVersion: policy.openservicemesh.io/v1alpha1
+kind: Egress
+metadata:
+  name: hosts-smtp-allow
+  namespace: {{ .Release.Namespace }}
+spec:
+  sources:
+    - kind: ServiceAccount
+      name: {{ .Values.airflow.serviceAccount.name }}
+      namespace: {{ .Release.Namespace }}
+  hosts:
+    {{- range $key, $val := .Values.osm.hosts.smtp }}
+      - {{ $val }}
+    {{- end }}
+  ports:
+    - number: 587
+      protocol: tcp
+---
+apiVersion: policy.openservicemesh.io/v1alpha1
+kind: Egress
+metadata:
+  name: postgres-tcp-allow
+  namespace: {{ .Release.Namespace }}
+spec:
+  sources:
+    - kind: ServiceAccount
+      name: {{ .Values.airflow.serviceAccount.name }}
+      namespace: {{ .Release.Namespace }}
+  ipAddresses:
+    - {{ .Values.calico.cidrs.postgresql }}
+  ports:
+  - number: {{ .Values.airflow.externalDatabase.port }}
+    protocol: tcp-server-first

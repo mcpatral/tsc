@@ -1,0 +1,55 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  annotations:
+    pv.kubernetes.io/provisioned-by: blob.csi.azure.com
+  name: pv-blob-{{ .Values.airflow_sa_container_name }}
+spec:
+  storageClassName: blob-nfs-permissions-{{ .Release.Name }}
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadOnlyMany
+  persistentVolumeReclaimPolicy: Delete
+  csi:
+    driver: blob.csi.azure.com
+    readOnly: true
+    # make sure volumeid is unique for every storage blob container in the cluster
+    # the # character is reserved for internal use
+    volumeHandle: "{{ .Values.airflow_sa_name }}-{{ .Values.airflow_sa_container_name }}"
+    volumeAttributes:
+      resourceGroup: "{{ .Values.airflow_sa_rg_name }}"
+      storageAccount: "{{ .Values.airflow_sa_name }}"
+      containerName: "{{ .Values.airflow_sa_container_name }}"
+      protocol: nfs
+    nodeStageSecretRef:
+      name: azureblob-secret
+      namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  annotations:
+    pv.kubernetes.io/provisioned-by: blob.csi.azure.com
+  name: pv-blob-{{ .Values.airflow_sa_container_name_logs }}
+spec:
+  storageClassName: blob-nfs-permissions-{{ .Release.Name }}
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Delete
+  csi:
+    driver: blob.csi.azure.com
+    readOnly: false
+    # make sure volumeid is unique for every storage blob container in the cluster
+    # the # character is reserved for internal use
+    volumeHandle: "{{ .Values.airflow_sa_name }}-{{ .Values.airflow_sa_container_name_logs }}"
+    volumeAttributes:
+      resourceGroup: "{{ .Values.airflow_sa_rg_name }}"
+      storageAccount: "{{ .Values.airflow_sa_name }}"
+      containerName: "{{ .Values.airflow_sa_container_name_logs }}"
+      protocol: nfs
+    nodeStageSecretRef:
+      name: azureblob-secret
+      namespace: {{ .Release.Namespace }}

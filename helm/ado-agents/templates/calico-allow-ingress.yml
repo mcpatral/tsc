@@ -1,0 +1,14 @@
+apiVersion: crd.projectcalico.org/v1
+kind: NetworkPolicy
+metadata:
+  name: default.{{ .Release.Name }}-allow-ingress
+  namespace: {{ .Release.Namespace }}
+spec:
+  order: 10
+  types:
+    - Ingress
+  ingress:
+    - action: Allow
+      source:
+        namespaceSelector: projectcalico.org/name == 'kube-system'
+      protocol: TCP

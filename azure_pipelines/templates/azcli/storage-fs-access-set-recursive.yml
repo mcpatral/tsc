@@ -1,0 +1,44 @@
+parameters:
+- name: azureServiceConnectionName
+  displayName: Azure Service Connection Name
+  type: string
+- name: storageAccountName
+  displayName: Storage Account Name
+  type: string
+- name: containerName
+  displayName: Container Name
+  type: string
+- name: fileAddress
+  displayName: File Address
+  type: string
+- name: acl
+  displayName: ACL
+  type: string
+- name: extraParameters
+  displayName: Extra parameters
+  type: string
+  default: ""
+- name: condition
+  displayName: Run conditions for task
+  type: string
+  default: ""
+- name: workingDirectory
+  displayName: Azure CLI working directory
+  type: string
+
+steps:
+- task: AzureCLI@2
+  displayName: Set acl for ${{ parameters.storageAccountName }}/${{ parameters.containerName }}${{ parameters.fileAddress }}
+  ${{ if ne(parameters.condition, '') }}:
+    condition: ${{ parameters.condition }}
+  inputs:
+    azureSubscription: ${{ parameters.azureServiceConnectionName }}
+    scriptType: 'bash'
+    scriptLocation: 'inlineScript'
+    inlineScript: |
+      echo "az storage fs access set-recursive --acl ${{ parameters.acl }} -f ${{ parameters.containerName }} --account-name ${{ parameters.storageAccountName }} --path ${{ parameters.fileAddress }} ${{ parameters.extraParameters }} --auth-mode login"
+      command_output=$( { az storage fs access set-recursive --acl "${{ parameters.acl }}" -f ${{ parameters.containerName }} --account-name ${{ parameters.storageAccountName }} --path ${{ parameters.fileAddress }} ${{ parameters.extraParameters }} --auth-mode login  | sed s/Output/Useless/ > outfile; } 2>&1 )
+      if [[ $command_output == *"error"* ]]; then
+        echo "##vso[task.logissue type=warning;]Warning, acl for ${{ parameters.storageAccountName }}/${{ parameters.containerName }}${{ parameters.fileAddress }} may not have been set correctly, please check this if further steps do not work."
+      fi
+    workingDirectory: ${{ parameters.workingDirectory }}

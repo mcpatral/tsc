@@ -1,0 +1,164 @@
+parameters:
+  - name: aksClusterName
+    displayName: AKS Cluster name
+    type: string
+  - name: aksClusterResourceGroup
+    displayName: AKS Cluster resource group name
+    type: string
+  - name: namespace
+    displayName: Namespace to install chart
+    type: string
+  - name: kubectlVersion
+    displayName: Kubectl version to use
+    type: string
+  - name: helmVersion
+    displayName: Helm version to use
+    type: string
+  - name: osmVersion
+    displayName: Open Service Mesh CLI version to use
+    type: string
+    default: "1.2.4"
+  - name: helmReleaseName
+    displayName: Helm release name
+    type: string
+  - name: helmChartDirectory
+    displayName: Helm chart directory
+    type: string
+  - name: helmChartValues
+    displayName: Helm chart values
+    type: string
+    default:
+  - name: helmChartValuesFile
+    displayName: Helm chart values file
+    type: string
+    default:
+  - name: helmAdditionalArguments
+    displayName: Additional arguments to pass to Helm chart command
+    type: string
+    default:
+  - name: acrName
+    displayName: Azure Container registry name
+    type: string
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+  - name: skipHelmInstall
+    displayName: Skip installation of Helm
+    type: boolean
+    default: false
+  - name: skipKubectlInstall
+    displayName: Skip installation of Kubectl
+    type: boolean
+    default: false
+  - name: downloadHelmDependencies
+    displayName: Log into ACR and download Helm dependencies
+    type: boolean
+    default: true
+  - name: skipAksLogon
+    displayName: Skip logon to AKS
+    type: boolean
+    default: false
+  - name: installCrds
+    displayName: Install CRDs using Kubectl
+    type: boolean
+    default: false
+  - name: enableOSM
+    displayName: Enable OSM
+    type: boolean
+    default: false
+  - name: pathToCrds
+    displayName: Path to file or to folder with files
+    type: string
+    default:
+  - name: helmTimeout
+    displayName: helm timeout
+    type: string
+    default: 5m0s   
+
+steps:
+  - ${{ if not(parameters.skipKubectlInstall) }}:
+    - template: kubectl/kubectl-installer.yml
+      parameters:
+        kubectlVersion: ${{ parameters.kubectlVersion }}
+        
+  - ${{ if not(parameters.skipHelmInstall) }}:
+    - template: helm/helm-installer.yml
+      parameters:
+        helmVersion: ${{ parameters.helmVersion }}
+
+  - ${{ if parameters.downloadHelmDependencies }}:
+    - template: azcli/acr-login.yml
+      parameters:
+        azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+        acrName: ${{ parameters.acrName }}
+        workingDirectory: ${{ parameters.helmChartDirectory }}
+
+  - ${{ if not(parameters.skipAksLogon) }}:
+    - template: azcli/aks-get-credentials.yml
+      parameters:
+        aksClusterName: ${{ parameters.aksClusterName }}
+        aksClusterResourceGroup: ${{ parameters.aksClusterResourceGroup }}
+        azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+        workingDirectory: ${{ parameters.helmChartDirectory }}
+
+  - ${{ if or(parameters.installCrds, parameters.enableOSM) }}:    
+    - ${{ if parameters.installCrds }}:
+      - template: kubectl/create-or-replace-crds.yml
+        parameters:
+          templatesToInstall: ${{ parameters.pathToCrds }}
+          namespace: ${{ parameters.namespace }}
+          workingDirectory: ${{ parameters.helmChartDirectory }}
+
+    - ${{ if parameters.enableOSM }}:
+      - template: kubectl/create.yml
+        parameters:
+          resourceType: namespace
+          resourceName: ${{ parameters.namespace }}
+          namespace: ${{ parameters.namespace }}
+          workingDirectory: ${{ parameters.helmChartDirectory }}
+
+      - template: utils/binary-install.yml
+        parameters:
+          binaryName: osm
+          binaryVersion: ${{ parameters.osmVersion }}
+          validationCommand: osm version
+
+      - template: osm/enable-disable-namespace.yml
+        parameters:
+          namespace: ${{ parameters.namespace }}
+          action: add
+          workingDirectory: ${{ parameters.helmChartDirectory }}
+  
+  - ${{ if parameters.downloadHelmDependencies }}:
+    - task: HelmDeploy@0
+      displayName: Download dependency charts
+      inputs:
+        connectionType: 'None'
+        command: 'dependency'
+        arguments: 'build ${{ parameters.helmChartDirectory }}'
+        publishPipelineMetadata: false
+
+  - task: HelmDeploy@0
+    displayName: Run Helm Install-Upgrade
+    inputs:
+      connectionType: 'Azure Resource Manager'
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      azureResourceGroup: ${{ parameters.aksClusterResourceGroup }}
+      kubernetesCluster: ${{ parameters.aksClusterName }}
+      useClusterAdmin: true
+      namespace: ${{ parameters.namespace }}
+      command: 'upgrade'
+      arguments: >-
+        --create-namespace 
+        --timeout ${{ parameters.helmTimeout }}
+        ${{ parameters.helmAdditionalArguments }}
+      install: true
+      chartType: 'FilePath'
+      chartPath: ${{ parameters.helmChartDirectory }}
+      releaseName: ${{ parameters.helmReleaseName }}
+      ${{ if parameters.helmChartValues }}:
+        overrideValues: |
+          ${{ parameters.helmChartValues }}
+      ${{ if parameters.helmChartValuesFile }}:
+        valueFile: ${{ parameters.helmChartValuesFile }}
+      publishPipelineMetadata: false

@@ -1,0 +1,195 @@
+parameters:
+  - name: useDocker
+    type: boolean
+    default: true
+  - name: sourceAzureServiceConnectionName
+    type: string
+  - name: targetAzureServiceConnectionName
+    type: string
+  - name: terraformVersion
+    type: string
+  - name: imageNames
+    displayName: Docker image names with tags
+    type: object
+  - name: dependsOn
+    type: object
+    default: []
+  - name: terraformResourceGroupName
+    displayName: Resource group for Terraform state of environment
+    type: string
+  - name: terraformSaName
+    displayName: Storage Account name for Terraform state of environment
+    type: string
+  - name: terraformBackendContainerName
+    displayName: SA Container name for Terraform state of environment
+    type: string
+  - name: pool
+    displayName: Agent pool name to run jobs
+    type: string
+  - name: sourceAcrName
+    displayName: Source Azure Container Registry name
+    type: string
+  - name: sourceAcrRg
+    displayName: Source Azure Container Registry Resource Group name
+    type: string
+  - name: sourceAcrSubscriptionId
+    displayName: Source Azure Container Registry Subscription ID
+    type: string
+  - name: paasResourceGroupName
+    displayName: Paas Resource Group Name
+    type: string
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+  - name: saPublicAccessUpdate
+    displayName: Storage Account Public Access Update
+    type: boolean
+  - name: enablersModule
+    displayName: Enablers module name
+    type: string
+  - name: stageNameSuffix
+    displayName: Stage Name Suffix
+    type: string
+    default: ""    
+
+stages:
+  - stage: acr_sync${{ parameters.stageNameSuffix }}
+    displayName: ACR sync from ${{ parameters.pool }}
+    dependsOn: ${{ parameters.dependsOn }}
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    jobs:
+      - job: acr_sync
+        displayName: ACR sync
+        pool: 
+          ${{ if ne(parameters['pool'], 'ubuntu-latest') }}:
+            name: ${{ parameters.pool }}
+          ${{ else }}:
+            vmImage: ${{ parameters.pool }}
+        steps:
+          - ${{ if parameters.saPublicAccessUpdate }}:
+            - template: templates/azcli/sa-update-public-network-access.yml
+              parameters:
+                azureServiceConnectionName: ${{ parameters.targetAzureServiceConnectionName }}
+                resourceGroupName:  ${{ parameters.terraformResourceGroupName }}
+                workingDirectory: $(System.DefaultWorkingDirectory)
+                saName: ${{ parameters.terraformSaName }}
+                publicAccess: Enabled
+                waitAfterUpdate: true
+              
+          - template: templates/terraform-outputs.yml
+            parameters:
+              azureServiceConnectionName: ${{ parameters.targetAzureServiceConnectionName }}
+              workingDirectory: $(System.DefaultWorkingDirectory)/terraform/${{ parameters.enablersModule }}
+              terraformVersion: ${{ parameters.terraformVersion }}
+              terraformResourceGroupName: ${{ parameters.terraformResourceGroupName }}
+              terraformSaName: ${{ parameters.terraformSaName }}
+              terraformBackendContainerName: ${{ parameters.terraformBackendContainerName }}
+
+          - ${{ if parameters.useDocker }}:
+            - template: templates/utils/get-agent-ip.yml
+              parameters:
+                workingDirectory: $(System.DefaultWorkingDirectory)
+
+            - template: templates/azcli/acr-network-change-public.yml
+              parameters:
+                acrName: ${{ parameters.sourceAcrName }}
+                acrResourceGroupName: ${{ parameters.sourceAcrRg }}
+                acrSubscriptionId: ${{ parameters.sourceAcrSubscriptionId }}
+                azureServiceConnectionName: ${{ parameters.sourceAzureServiceConnectionName }}
+                workingDirectory: $(System.DefaultWorkingDirectory)
+                enabled: true  
+
+            - template: templates/azcli/acr-network-change-public.yml
+              parameters:
+                acrName: $(terraform_out_acr_name_main)
+                acrResourceGroupName: ${{ parameters.paasResourceGroupName }}
+                azureServiceConnectionName: ${{ parameters.targetAzureServiceConnectionName }}
+                workingDirectory: $(System.DefaultWorkingDirectory)
+                enabled: true                         
+
+            - template: templates/azcli/acr-network-rule.yml
+              parameters:
+                acrName: ${{ parameters.sourceAcrName }}
+                acrResourceGroupName: ${{ parameters.sourceAcrRg }}
+                acrSubscriptionId: ${{ parameters.sourceAcrSubscriptionId }}
+                acrIpRange: $(agentIp)
+                action: "add"
+                waitAfterUpdate: true
+                azureServiceConnectionName: ${{ parameters.sourceAzureServiceConnectionName }}
+                workingDirectory: $(System.DefaultWorkingDirectory)
+
+            - template: templates/azcli/acr-network-rule.yml
+              parameters:
+                acrName: $(terraform_out_acr_name_main)
+                acrResourceGroupName: ${{ parameters.paasResourceGroupName }}
+                acrIpRange: $(agentIp)
+                action: "add"
+                waitAfterUpdate: true
+                azureServiceConnectionName: ${{ parameters.targetAzureServiceConnectionName }}
+                workingDirectory: $(System.DefaultWorkingDirectory)                  
+
+          - template: templates/acr-sync-steps.yml
+            parameters:
+              useDocker: ${{ parameters.useDocker }}
+              sourceAcrName: ${{ parameters.sourceAcrName }}
+              sourceAcrResourceGroup: ${{ parameters.sourceAcrRg }}
+              sourceAcrSubscriptionId: ${{ parameters.sourceAcrSubscriptionId }} 
+              targetAcrName: $(terraform_out_acr_name_main)
+              azureServiceConnectionName: ${{ parameters.targetAzureServiceConnectionName }}
+              workingDirectory: $(System.DefaultWorkingDirectory)
+              imageNames: ${{ parameters.imageNames }}
+
+          - template: templates/azcli/sa-update-public-network-access.yml
+            parameters:
+              azureServiceConnectionName: ${{ parameters.targetAzureServiceConnectionName }}
+              resourceGroupName:  ${{ parameters.terraformResourceGroupName }}
+              workingDirectory: $(System.DefaultWorkingDirectory)
+              saName: ${{ parameters.terraformSaName }}
+              publicAccess: Disabled
+              waitAfterUpdate: false
+              condition: or (always(), canceled())
+
+          - ${{ if parameters.useDocker }}:
+            - template: templates/azcli/acr-network-rule.yml
+              parameters:
+                acrName: ${{ parameters.sourceAcrName }}
+                acrResourceGroupName: ${{ parameters.sourceAcrRg }}
+                acrSubscriptionId: ${{ parameters.sourceAcrSubscriptionId }}
+                acrIpRange: $(agentIp)
+                action: "remove"
+                waitAfterUpdate: false
+                azureServiceConnectionName: ${{ parameters.sourceAzureServiceConnectionName }}
+                workingDirectory: $(System.DefaultWorkingDirectory)
+                condition: and(always(), eq(variables.updatedAcrAccess, 'true'))
+
+            - template: templates/azcli/acr-network-rule.yml
+              parameters:
+                acrName: $(terraform_out_acr_name_main)
+                acrResourceGroupName: ${{ parameters.paasResourceGroupName }}
+                acrIpRange: $(agentIp)
+                action: "remove"
+                waitAfterUpdate: false
+                azureServiceConnectionName: ${{ parameters.targetAzureServiceConnectionName }}
+                workingDirectory: $(System.DefaultWorkingDirectory)
+                condition: and(always(), eq(variables.updatedAcrAccess, 'true'))
+
+          - template: templates/azcli/acr-network-change-public.yml
+            parameters:
+              acrName: ${{ parameters.sourceAcrName }}
+              acrResourceGroupName: ${{ parameters.sourceAcrRg }}
+              acrSubscriptionId: ${{ parameters.sourceAcrSubscriptionId }}
+              azureServiceConnectionName: ${{ parameters.sourceAzureServiceConnectionName }}
+              workingDirectory: $(System.DefaultWorkingDirectory)
+              enabled: false
+              condition: or (always(), canceled())
+
+          - template: templates/azcli/acr-network-change-public.yml
+            parameters:
+              acrName: $(terraform_out_acr_name_main)
+              acrResourceGroupName: ${{ parameters.paasResourceGroupName }}
+              azureServiceConnectionName: ${{ parameters.targetAzureServiceConnectionName }}
+              workingDirectory: $(System.DefaultWorkingDirectory)
+              enabled: false
+              condition: or (always(), canceled())

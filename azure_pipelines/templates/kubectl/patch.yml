@@ -1,0 +1,54 @@
+parameters:
+  - name: resourceToPatch
+    displayName: Resource name to patch
+    type: string
+  - name: patchInline
+    displayName: Patch content
+    type: string
+    default: ""
+  - name: patchFile
+    displayName: Path to patch file
+    type: string
+    default: ""
+  - name: patchType
+    displayName: Patch type
+    type: string
+    values:
+      - merge
+      - json
+      - strategic
+    default: merge
+  - name: namespace
+    displayName: Namespace to install templates
+    type: string
+  - name: workingDirectory
+    displayName: Azure CLI working directory
+    type: string
+
+steps:
+  - template: check-connectivity.yml
+    parameters:
+      workingDirectory: ${{ parameters.workingDirectory }}
+
+  - task: Bash@3
+    displayName: Patching templates using kubectl
+    inputs:
+      targetType: 'inline'
+      script: |
+        declare patch
+        if [[ "${{ parameters.patchInline }}" != "" ]]; then
+          echo '${{ parameters.patchInline }}' > patch.json
+          echo "Generated patch file content: "
+          cat patch.json
+          patch="--patch-file patch.json"
+        elif [[ "${{ parameters.patchFile }}" != "" ]]; then
+          echo "Applied patch file content: "
+          cat ${{ parameters.patchFile }}
+          patch="--patch-file ${{ parameters.patchFile }}"
+        else
+          echo "No patch has been provided... Failing..."
+          exit 1
+        fi
+        
+        kubectl patch ${{ parameters.resourceToPatch }} -n ${{ parameters.namespace }} --type ${{ parameters.patchType }} $patch
+      workingDirectory: ${{ parameters.workingDirectory }}

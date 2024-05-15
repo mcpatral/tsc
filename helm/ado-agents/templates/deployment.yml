@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  replicas: {{ .Values.adoAgents.replicas }}
+  progressDeadlineSeconds: {{ .Values.adoAgents.progressDeadlineSeconds }}
+  selector:
+    matchLabels:
+      app: azdevops-agent
+  template:
+    metadata:
+      labels:
+        app: azdevops-agent
+    spec:
+      containers:
+        - name: {{ .Values.adoAgents.name }}
+          image: {{ .Values.adoAgents.image.registry }}/{{ .Values.adoAgents.image.repo }}:{{ .Values.adoAgents.image.tag }}
+          {{- if .Values.adoAgents.image.pullPolicy }}
+          imagePullPolicy: {{ .Values.adoAgents.image.pullPolicy }}
+          {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: {{ .Values.adoAgents.allowPrivilegeEscalation }}
+          resources:
+            requests:
+              cpu: {{ .Values.adoAgents.resources.requests.cpu }}
+              memory: {{ .Values.adoAgents.resources.requests.memory }}
+            limits:
+              cpu: {{ .Values.adoAgents.resources.limits.cpu }}
+              memory: {{ .Values.adoAgents.resources.limits.memory }}
+          env:
+            - name: AZP_URL
+              value: {{ required "adoAgents.azureDevops.url value is required" .Values.adoAgents.azureDevops.url }}
+            - name: AZP_TOKEN
+              value: {{ required "adoAgents.azureDevops.token value is required" .Values.adoAgents.azureDevops.token }}
+            - name: AZP_POOL
+              value: {{ required "adoAgents.azureDevops.pool value is required" .Values.adoAgents.azureDevops.pool }}
+      serviceAccountName: {{ .Release.Name }}-agent
+      nodeSelector: {{ toYaml .Values.adoAgents.nodeSelector | nindent 8 }}

@@ -1,0 +1,33 @@
+parameters:
+  - name: templatesToInstall
+    displayName: Path to file or to folder with files
+    type: string
+  - name: namespace
+    displayName: Namespace to install templates
+    type: string
+  - name: workingDirectory
+    displayName: Azure CLI working directory
+    type: string
+
+steps:
+  - template: check-connectivity.yml
+    parameters:
+      workingDirectory: ${{ parameters.workingDirectory }}
+  
+  - task: Bash@3
+    displayName: Creating or replacing templates using kubectl
+    inputs:
+      targetType: 'inline'
+      script: |
+        for template in ${{ parameters.templatesToInstall }}/*.yaml; do
+          echo "Trying to replace Custom Resource Definition: $template"
+          kubectl replace -n ${{ parameters.namespace }} -f $template
+
+          if [ $? -ne 0 ]; 
+          then
+              echo "Custom Resource Definition: $template doesn't exists"
+              echo "New Custom Resource Definition: $template will be created"
+              kubectl create -n ${{ parameters.namespace }} -f $template
+          fi
+        done
+      workingDirectory: ${{ parameters.workingDirectory }}

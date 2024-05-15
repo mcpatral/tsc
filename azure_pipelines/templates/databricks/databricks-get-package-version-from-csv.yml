@@ -1,0 +1,38 @@
+parameters:
+  - name: csvFilePath
+    displayName: Path to *.csv file with listed libraries
+    type: string
+
+  - name: workingDirectory
+    displayName: working directory
+    type: string
+
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+
+steps:
+  - task: Bash@3
+    displayName: 'Get Databricks packages version from csv'
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    inputs:
+      targetType: 'inline'
+      script: |
+        echo "Packages *.csv file path: ${{ parameters.csvFilePath }}"
+        tail -n +2 ${{ parameters.csvFilePath }} | while IFS=',' read -r  packagename packageversion filename targetname || [ -n "$targetname" ]; do
+          if [[ "$packagename" == "igt-schemas" ]]; then
+              echo "$packagename package version: $packageversion"
+              echo "##vso[task.setvariable variable=igt_schemas_package_version]$packageversion"
+              echo "$packagename package filename: $filename"
+              echo "##vso[task.setvariable variable=igt_schemas_filename]$filename"
+          fi
+          if [[ "$packagename" == "common-pipelines" ]]; then
+              echo "$packagename package version: $packageversion"
+              echo "##vso[task.setvariable variable=common_pipelines_package_version]$packageversion"
+              echo "$packagename package filename: $filename"
+              echo "##vso[task.setvariable variable=common_pipelines_filename]$filename"
+          fi
+        done
+      workingDirectory: ${{ parameters.workingDirectory }}

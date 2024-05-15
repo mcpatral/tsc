@@ -1,0 +1,12 @@
+parameters:
+  - name: projectName
+    type: string
+
+  - name: feedName
+    type: string
+
+steps:
+  - task: PipAuthenticate@1
+    inputs:
+      artifactFeeds: ${{ parameters.projectName}}/${{ parameters.feedName }}
+    displayName: 'Authenticate to ${{ parameters.projectName}}/${{ parameters.feedName }}'

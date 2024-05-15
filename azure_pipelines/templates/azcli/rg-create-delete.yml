@@ -1,0 +1,41 @@
+parameters:
+  - name: resourceGroupName
+    displayName: Resource group name
+    type: string
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+  - name: workingDirectory
+    displayName: Azure CLI working directory
+    type: string
+  - name: action
+    displayName: Action to do with resource group
+    default: create
+    values:
+      - create
+      - delete
+  - name: location
+    displayName: Location of resource backend 
+    type: string
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+
+steps:
+  - task: AzureCLI@2
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    displayName: ${{ parameters.action }} resource group
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        if [ "${{ parameters.action }}" == "create" ]; then
+          az group ${{ parameters.action }} --location ${{ parameters.location }} --resource-group ${{ parameters.resourceGroupName }} --query "properties"
+        fi
+        if   [ "${{ parameters.action }}" == "delete" ]; then
+          az group ${{ parameters.action }} --name ${{ parameters.resourceGroupName }} --yes
+        fi
+      workingDirectory: ${{ parameters.workingDirectory }}

@@ -1,0 +1,211 @@
+trigger: none
+
+parameters:
+  - name: environmentName
+    displayName: Variable group name for environment to deploy
+    type: string
+  - name: destroyPairInfrastructure
+    default: false
+    type: boolean
+  - name: rotateDnsRecords
+    default: false
+    type: boolean
+  - name: destroyTerraformStorageAccount
+    default: false
+    type: boolean
+  - name: destroyDbwMetastore
+    default: false
+    type: boolean
+
+variables:
+  - group: ${{ parameters.environmentName }}
+  - name: terraformVersion
+    value: "1.5.0"
+  - name: kubectlVersion
+    value: "1.27.3"
+  - name: helmVersion
+    value: "3.12.1"
+  - ${{ if eq(parameters.destroyPairInfrastructure, false) }}:
+    - name: aksDevOpsNamespace
+      value: ${{ parameters.environmentName }}-agentpool
+    - name: azureDevOpsPool
+      value: ${{ parameters.environmentName }}-agentpool
+    - name: locationInfraShort
+      value: $(terraform_in_location_short)
+    - name: enablersModule
+      value: enablers
+    - name: infrastructureModule
+      value: infrastructure
+    - name: contentModule
+      ${{ if parameters.destroyDbwMetastore }}:
+        value: content_new
+      ${{ else }}:
+        value: content
+  - ${{ if eq(parameters.destroyPairInfrastructure, true) }}:
+    - name: aksDevOpsNamespace
+      value: ${{ parameters.environmentName }}-pair-agentpool
+    - name: azureDevOpsPool
+      value: ${{ parameters.environmentName }}-pair-agentpool
+    - name: locationInfraShort
+      value: $(terraform_in_pair_location_short)
+    - name: enablersModule
+      value: pair_enablers
+    - name: infrastructureModule
+      value: pair_infrastructure
+    - name: contentModule
+      value: pair_content
+  - name: terraformResourceGroupName
+    value: rg-$(terraform_in_environment_type)-$(terraform_in_project)-$(terraform_in_location_short)-state
+  - name: terraformSaName
+    value: sa$(terraform_in_environment_type)$(terraform_in_project)$(terraform_in_location_short)tfstate
+  - name: terraformBackendContainerName
+    value: $(terraform_in_environment_type)tfstate
+  - name: terraformPlanContainerName
+    value: $(terraform_in_environment_type)tfplan
+  - name: masterKeyVaultName
+    value: kv-$(terraform_in_environment_type)-$(terraform_in_project)-$(terraform_in_location_short)-master
+  - name: mainKeyVaultName
+    value: kv-$(terraform_in_environment_type)-$(terraform_in_project)-$(terraform_in_location_short)-main
+  - name: paasResourceGroupName
+    value: rg-$(terraform_in_environment_type)-$(terraform_in_project)-$(terraform_in_location_short)
+  - name: mainResourceGroupName
+    value: rg-$(terraform_in_environment_type)-$(terraform_in_project)-$(locationInfraShort)
+  - name: aksDevOpsClusterName
+    value: aks-$(terraform_in_environment_type)-$(terraform_in_project)-$(locationInfraShort)-devops-agents
+  - name: azureDevOpsUrl
+    value: "https://dev.azure.com/intrum-catalyst"
+  - name: publicPoolName
+    value: ubuntu-latest
+
+stages:
+  - template: azure_pipelines/terraform-stages.yml
+    parameters:
+      module: ${{ variables.contentModule }}
+      azureServiceConnectionName: $(azure_service_principal_name)
+      terraformVersion: ${{ variables.terraformVersion }}
+      kubectlVersion: ${{ variables.kubectlVersion }}
+      helmVersion: ${{ variables.helmVersion }}
+      terraformResourceGroupName: ${{ variables.terraformResourceGroupName }}
+      terraformSaName: ${{ variables.terraformSaName }}
+      terraformBackendContainerName: ${{ variables.terraformBackendContainerName }}
+      terraformPlanContainerName: ${{ variables.terraformPlanContainerName }}
+      keyVaultName: ${{ variables.mainKeyVaultName }}
+      pool: ${{ variables.azureDevOpsPool }} 
+      saPublicAccessUpdate: false
+      keyVaultSecretNames: 
+        - databrickadmins
+      condition: and(not(failed()), not(canceled()), not(and(${{ parameters.destroyPairInfrastructure }}, not(variables['terraform_in_pair_paas']))))
+      mainResourceGroupName: ${{ variables.mainResourceGroupName }}
+      dnsZoneSubscriptionID: $(private_dns_zone_subscription_id)
+      dnsZoneResourceGroupName: $(private_dns_zone_resource_group)
+      rotateDnsRecords: ${{ parameters.rotateDnsRecords }}
+      dnsRecordsModules:
+        - module: ${{ variables.enablersModule }}
+          when: always_
+        - module: ${{ variables.infrastructureModule }}
+          when: always_
+        - module: ${{ variables.contentModule }}
+          when: always_
+      additionalPlanOptions: >-
+        -destroy
+
+  - template: azure_pipelines/terraform-stages.yml
+    parameters:
+      module: ${{ variables.infrastructureModule }}
+      azureServiceConnectionName: $(azure_service_principal_name)
+      terraformVersion: ${{ variables.terraformVersion }}
+      kubectlVersion: ${{ variables.kubectlVersion }}
+      helmVersion: ${{ variables.helmVersion }}
+      terraformResourceGroupName: ${{ variables.terraformResourceGroupName }}
+      terraformSaName: ${{ variables.terraformSaName }}
+      terraformBackendContainerName: ${{ variables.terraformBackendContainerName }}
+      terraformPlanContainerName: ${{ variables.terraformPlanContainerName }}
+      keyVaultName: ${{ variables.masterKeyVaultName }}
+      ${{ if not(parameters.destroyPairInfrastructure) }}:
+        keyVaultSecretNames: 
+          - psqladminuser
+          - psqladminpwd
+          - psqlairflowuser
+          - psqlairflowpwd
+          # - verticasuname
+          # - verticasupassword
+          # - verticatlskey
+          # - verticatlscrt
+          # - verticatlscakey
+          # - verticatlscacrt
+          # - verticatlswebhookkey
+          # - verticatlswebhookcrt
+          # - verticadbwritername
+          # - verticadbwriterpassword 
+          - airflowoauthspnclientid
+          - airflowoauthspnclientsecret
+          - airflowtenantid           
+          - airflowfernetkey
+          - airflowpwd 
+          - databrickadmins
+          - clienttlskey
+          - clienttlscrt
+          - airflowsmtpclientsecret
+          - airflowsmtpclientid
+          - airflowdbwspclientid
+          - airflowdbwspclientsecret
+      pool: ${{ variables.azureDevOpsPool }} 
+      saPublicAccessUpdate: false
+      condition: and(not(failed()), not(canceled()), in(dependencies.${{ variables.contentModule }}.result, 'Succeeded', 'Skipped', ''), not(and(${{ parameters.destroyPairInfrastructure }}, not(variables['terraform_in_pair_paas']))))
+      mainResourceGroupName: ${{ variables.mainResourceGroupName }}
+      dnsZoneSubscriptionID: $(private_dns_zone_subscription_id)
+      dnsZoneResourceGroupName: $(private_dns_zone_resource_group)
+      rotateDnsRecords: ${{ parameters.rotateDnsRecords }}
+      additionalPlanOptions: >-
+        -destroy
+      dependsOn:
+        - ${{ variables.contentModule }}
+
+  - template: azure_pipelines/terraform-stages.yml
+    parameters:
+      module: ${{ variables.enablersModule }}
+      stageNameSuffix: _on_public_agent
+      azureServiceConnectionName: $(azure_service_principal_name)
+      terraformVersion: ${{ variables.terraformVersion }}
+      kubectlVersion: ${{ variables.kubectlVersion }}
+      helmVersion: ${{ variables.helmVersion }}
+      terraformResourceGroupName: ${{ variables.terraformResourceGroupName }}
+      terraformSaName: ${{ variables.terraformSaName }}
+      terraformBackendContainerName: ${{ variables.terraformBackendContainerName }}
+      terraformPlanContainerName: ${{ variables.terraformPlanContainerName }}
+      keyVaultName: ${{ variables.masterKeyVaultName }}
+      pool: ${{ variables.publicPoolName }}
+      condition: and(not(failed()), not(canceled()), in(dependencies.${{ variables.infrastructureModule }}.result, 'Succeeded', 'Skipped', ''), not(and(${{ parameters.destroyPairInfrastructure }}, not(variables['terraform_in_pair_paas']))))
+      saPublicAccessUpdate: true
+      mainResourceGroupName: ${{ variables.mainResourceGroupName }}
+      dnsZoneSubscriptionID: $(private_dns_zone_subscription_id)
+      dnsZoneResourceGroupName: $(private_dns_zone_resource_group)
+      rotateDnsRecords: false
+      additionalPlanOptions: >-
+        -destroy
+      dependsOn:
+        - ${{ variables.infrastructureModule }}
+
+  - ${{ if and(not(parameters.destroyPairInfrastructure), parameters.destroyTerraformStorageAccount) }}:
+    - template: azure_pipelines/terraform-prep-stage.yml
+      parameters:
+        stageName: destroy_storage_phase
+        azureServiceConnectionName: $(azure_service_principal_name)
+        terraformResourceGroupName: ${{ variables.terraformResourceGroupName }}
+        terraformLocation: $(terraform_in_location)
+        terraformSaName: ${{ variables.terraformSaName }}
+        terraformBackendContainerName: ${{ variables.terraformBackendContainerName }}
+        terraformPlanContainerName: ${{ variables.terraformPlanContainerName }}
+        privatePoolName: ${{ variables.azureDevOpsPool }} 
+        publicPoolName: ${{ variables.publicPoolName }}
+        azureDevOpsUrl: ${{ variables.azureDevOpsUrl }}
+        keyVaultName: ${{ variables.masterKeyVaultName }}
+        acrRepositoryVersion: $(source_acr_devops_agent_version)
+        aksDevOpsClusterName: ${{ variables.aksDevOpsClusterName }}
+        mainResourceGroupName: ${{ variables.mainResourceGroupName }}
+        enablersModule: ${{ variables.enablersModule }}
+        destroy: true
+        destroyTerraformStorageAccount: true
+        condition: and(not(failed()), not(canceled()), in(dependencies.${{ variables.enablersModule }}_on_public_agent.result, 'Succeeded', 'Skipped', ''), not(and(${{ parameters.destroyPairInfrastructure }}, not(variables['terraform_in_pair_paas']))))
+        dependsOn:
+          - ${{ variables.enablersModule }}_on_public_agent

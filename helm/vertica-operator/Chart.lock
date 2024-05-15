@@ -1,0 +1,6 @@
+dependencies:
+- name: verticadb-operator
+  repository: oci://acrdevdaweucentralmanual.azurecr.io/charts
+  version: 1.11.1
+digest: sha256:326b507e9582f4b5c21bc9f73f84e7d0c1d7d7f3c437d9c19f13ab882e1d79e2
+generated: "2023-07-24T10:16:02.02182318+03:00"

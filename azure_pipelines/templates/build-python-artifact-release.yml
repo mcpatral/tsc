@@ -1,0 +1,84 @@
+parameters:
+  - name: branchName
+    type: string
+
+  - name: pyBuildRequirementsPath
+    type: string
+
+  - name: releaseAdditionalParameters
+    type: string
+
+  - name: buildCommand
+    type: string
+
+  - name: packageSuffix
+    type: string
+
+  - name: packageType
+    type: string
+
+  - name: artifactsDirectory
+    type: string
+
+  - name: workingDirectory
+    type: string
+
+steps:
+  - checkout: self
+    fetchDepth: 0
+    clean: true
+    persistCredentials: true
+
+  - template: git/checkout.yml
+    parameters:
+      branchName: ${{ parameters.branchName }}
+      stepDisplayName: 'Prepare git'
+      workingDirectory: '${{ parameters.workingDirectory }}'
+
+  - template: python/pip-get-version.yml
+
+  - template: python/pip-install-package.yml
+    parameters:
+      commandArgs: '-r ${{ parameters.workingDirectory }}/${{ parameters.pyBuildRequirementsPath }}'
+
+  - ${{ if eq(parameters.branchName, 'main') }}:
+      - template: semantic-release/release.yml
+        parameters:
+          additionalParameters: publish ${{ parameters.releaseAdditionalParameters }}
+          stepDisplayName: 'Publishing release'
+          workingDirectory: '${{ parameters.workingDirectory }}'
+
+  - ${{ else }}:
+      - script: ${{ parameters.buildCommand }}
+        displayName: 'Creating artifact'
+        workingDirectory: '${{ parameters.workingDirectory }}'
+
+      - task: Bash@3
+        displayName: Prepare package
+        inputs:
+          targetType: 'inline'
+          script: |
+            packageName=$(python3 setup.py --name)
+            echo "----------------------------------------------------------------------"
+            echo "Package name: $packageName"
+            echo "----------------------------------------------------------------------"
+
+            packageVersion=$(python3 setup.py --version)
+            echo "Package version: $packageVersion"
+            echo "----------------------------------------------------------------------"
+
+            packageBranch=$(echo ${{ parameters.branchName }} | sed 's/[^a-zA-Z0-9]/_/g')
+            echo "Package branch name: $packageBranch"
+            echo "----------------------------------------------------------------------"
+
+            find dist/ -name $packageName-*.${{ parameters.packageType }} \
+                  -execdir mv {} "$packageName"-"$packageVersion"-"$(Build.BuildNumber)"_"$packageBranch"-"${{ parameters.packageSuffix }}"."${{ parameters.packageType }}" \;
+
+            echo "Packages list:"
+            ls -la dist/
+          workingDirectory: '${{ parameters.workingDirectory }}'
+
+  - template: utils/publish-build-artifacts.yml
+    parameters:
+      artifactsDirectory: '${{ parameters.artifactsDirectory }}'
+      workingDirectory: '${{ parameters.workingDirectory }}'

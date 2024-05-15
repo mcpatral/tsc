@@ -1,0 +1,107 @@
+parameters:
+- name: deleteToken
+  type: boolean
+  displayName: Delete Token
+- name: azureServiceConnectionName
+  displayName: Azure Service Connection name
+  type: string
+- name: terraformVersion
+  type: string
+- name: terraformResourceGroupName
+  displayName: Resource group for TF
+  type: string
+- name: terraformSaName
+  displayName: Storage Account name for TF
+  type: string
+- name: terraformBackendContainerName
+  displayName: Container name for TF
+  type: string  
+- name: resourceGroupName
+  displayName: Resource Group Name
+  type: string
+# With defaults:
+- name: keyVaultName
+  displayName: Key Vault Name
+  type: string
+  default: null
+- name: lifetimeSeconds
+  displayName: Databricks Token Lifetime Seconds
+  type: number
+  default: 7776000
+- name: databricksPatTokenName
+  type: string
+  displayName: Key Vault Secret Name for the Token value
+- name: databricksPatTokenId
+  type: string
+  displayName: Key Vault Secret Name for the Token id
+- name: removeTheRestOfTokens
+  displayName: Remove the rest of tokens
+  type: boolean
+  default: false
+- name: databricksTokenIdToDelete
+  type: string
+  displayName: Databricks token Id to delete
+  default: null
+- name: databricksTokenIdToKeep
+  displayName: Databricks token Id to keep
+  type: string
+  default: null
+- name: infrastructureModule
+  displayName: Infrastructure module name
+  type: string
+
+steps:
+- template: terraform-outputs.yml
+  parameters:
+    azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+    workingDirectory: $(System.DefaultWorkingDirectory)/terraform/${{ parameters.infrastructureModule }}
+    terraformVersion: ${{ parameters.terraformVersion }}
+    terraformResourceGroupName: ${{ parameters.terraformResourceGroupName }}
+    terraformSaName: ${{ parameters.terraformSaName }}
+    terraformBackendContainerName: ${{ parameters.terraformBackendContainerName }}
+
+- template: databricks/databricks-installation-and-login.yml
+  parameters:
+    azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+    resourceGroupName: ${{ parameters.resourceGroupName }}
+    databricksWorkspaceName: $(terraform_out_db_workspace_name)
+
+- ${{ if eq(parameters.deleteToken, false) }}:
+  - template: azcli/kv-get-secrets.yml
+    parameters:
+      azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+      keyVaultName: ${{ parameters.keyVaultName }}
+      keyVaultSecretNames: 
+        - ${{ parameters.databricksPatTokenId }}
+
+  - script: |
+      echo "##vso[task.setvariable variable=token_id_to_delete;isOutput=true]$(${{ parameters.databricksPatTokenId }})"
+    name: outputPreviousTokenId
+    displayName: Output the previous token Id as a variable
+
+  - template: databricks/tokens-create.yml
+    parameters:
+      lifetimeSeconds: ${{ parameters.lifetimeSeconds }}
+
+  - template: azcli/kv-create-secrets.yml
+    parameters:
+      azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+      keyVaultName: ${{ parameters.keyVaultName }}
+      keyVaultSecretName: ${{ parameters.databricksPatTokenName }}
+      keyVaultSecretValue: $(token_value_env)
+      workingDirectory: $(System.DefaultWorkingDirectory)
+
+  - template: azcli/kv-create-secrets.yml
+    parameters:
+      azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+      keyVaultName: ${{ parameters.keyVaultName }}
+      keyVaultSecretName: ${{ parameters.databricksPatTokenId }}
+      keyVaultSecretValue: $(token_id_env)
+      workingDirectory: $(System.DefaultWorkingDirectory)
+
+- ${{ if eq(parameters.deleteToken, true) }}:
+  - template: databricks/tokens-revoke.yml
+    parameters:
+      removeTheRestOfTokens: ${{ parameters.removeTheRestOfTokens }}
+      databricksTokenIdToDelete: ${{ parameters.databricksTokenIdToDelete }}
+      databricksTokenIdToKeep: ${{ parameters.databricksTokenIdToKeep }}

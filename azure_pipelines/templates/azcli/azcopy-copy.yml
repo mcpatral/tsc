@@ -1,0 +1,59 @@
+parameters:
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+  - name: workingDirectory
+    displayName: Azure CLI working directory
+    type: string
+  - name: source
+    displayName: source
+    type: string  
+  - name: destination
+    displayName: destination
+    type: string
+  - name: extraParameters
+    displayName: extra parameters
+    type: string
+    default: ""      
+  - name: sasToken
+    displayName: sasToken
+    type: string              
+    default: ""
+
+steps:
+  - ${{ if not(parameters.sasToken) }}:  
+    - task: AzureCLI@2
+      displayName: Azcopy files
+      inputs:
+        azureSubscription: ${{ parameters.azureServiceConnectionName }}
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          echo "AAD login"
+          for i in {1..5}
+          do
+            azcopy login --identity
+            azcopy sync "${{ parameters.source }}" "${{ parameters.destination }}" ${{ parameters.extraParameters }} \
+            && exit 0 || echo "Attempt $i. Copy failed, retrying in 10 seconds..." && sleep 10
+          done
+          echo "##vso[task.logissue type=error;]error copying blobs from ${{ parameters.source }} to ${{ parameters.destination }}"
+          exit 1
+        workingDirectory: ${{ parameters.workingDirectory }}
+  - ${{ else }}:
+    - task: AzureCLI@2
+      displayName: Azcopy files
+      inputs:
+        azureSubscription: ${{ parameters.azureServiceConnectionName }}
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'        
+        inlineScript: |          
+          echo "SAS login"
+          echo "azcopy sync ${{ parameters.extraParameters }} ${{ parameters.source }} ${{ parameters.destination }}?${{ parameters.sasToken }}"
+          for i in {1..5}
+          do
+            azcopy sync ${{ parameters.extraParameters }} "${{ parameters.source }}" "${{ parameters.destination }}"?"${{ parameters.sasToken }}" \
+            && exit 0 || echo "Attempt $i. Copy failed, retrying in 10 seconds..." && sleep 10
+          done
+          echo "##vso[task.logissue type=error;]error copying blobs from ${{ parameters.source }} to ${{ parameters.destination }}"
+          exit 1
+        workingDirectory: ${{ parameters.workingDirectory }}

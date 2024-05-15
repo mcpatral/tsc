@@ -1,0 +1,113 @@
+parameters:
+- name: environmentName
+  displayName: Environment variable group name
+  type: string
+- name: usePairInfrastructure
+  displayName: Use pair infrastructure
+  type: boolean
+- name: usePublicPool
+  displayName: Use public pool
+  type: boolean
+- name: enablersPrivateEndpoints
+  displayName: Rotate Enablers
+  default: false
+  type: boolean
+- name: infrastructurePrivateEndpoints
+  displayName: Rotate Infrastructure
+  default: false
+  type: boolean
+# - name: VerticaIp
+#   displayName: Rotate Vertica IP
+#   default: false
+#   type: boolean
+- name: AirflowIp
+  displayName: Rotate Airflow IP
+  default: false
+  type: boolean
+
+variables:
+- group: ${{ parameters.environmentName }}
+- name: terraformVersion
+  value: "1.5.0"
+- name: kubectlVersion
+  value: "1.27.3"
+- name: helmVersion
+  value: "3.12.1"
+- ${{ if eq(parameters.usePairInfrastructure, false) }}:
+  - name: aksDevOpsNamespace
+    value: ${{ parameters.environmentName }}-agentpool
+  - name: azureDevOpsPool
+    value: ${{ parameters.environmentName }}-agentpool
+  - name: locationInfraShort
+    value: $(terraform_in_location_short)
+  - name: enablersModule
+    value: enablers
+  - name: infrastructureModule
+    value: infrastructure
+  - name: contentModule
+    value: content
+- ${{ if eq(parameters.usePairInfrastructure, true) }}:
+  - name: aksDevOpsNamespace
+    value: ${{ parameters.environmentName }}-pair-agentpool
+  - name: azureDevOpsPool
+    value: ${{ parameters.environmentName }}-pair-agentpool
+  - name: locationInfraShort
+    value: $(terraform_in_pair_location_short)
+  - name: enablersModule
+    value: pair_enablers
+  - name: infrastructureModule
+    value: pair_infrastructure
+  - name: contentModule
+    value: pair_content
+- name: terraformResourceGroupName
+  value: rg-$(terraform_in_environment_type)-$(terraform_in_project)-$(terraform_in_location_short)-state
+- name: terraformSaName
+  value: sa$(terraform_in_environment_type)$(terraform_in_project)$(terraform_in_location_short)tfstate
+- name: terraformBackendContainerName
+  value: $(terraform_in_environment_type)tfstate
+- name: masterKeyVaultName
+  value: kv-$(terraform_in_environment_type)-$(terraform_in_project)-$(terraform_in_location_short)-master
+- name: mainKeyVaultName
+  value: kv-$(terraform_in_environment_type)-$(terraform_in_project)-$(terraform_in_location_short)-main
+- name: paasResourceGroupName
+  value: rg-$(terraform_in_environment_type)-$(terraform_in_project)-$(terraform_in_location_short)
+- name: mainResourceGroupName
+  value: rg-$(terraform_in_environment_type)-$(terraform_in_project)-$(locationInfraShort)
+- name: aksDevOpsClusterName
+  value: aks-$(terraform_in_environment_type)-$(terraform_in_project)-$(locationInfraShort)-devops-agents
+- name: azureDevOpsUrl
+  value: "https://dev.azure.com/intrum-catalyst"
+- name: publicPoolName
+  value: ubuntu-latest
+# Terraform Auto-Approve - use for feature branching testing ONLY
+- name: autoApprove
+  value: false
+
+trigger: none
+  
+stages: 
+- stage: rotate_records
+  displayName: Rotate Private DNS A Records
+  jobs:
+  - template: azure_pipelines/rotate-a-dns-records-job.yml
+    parameters:
+      azureServiceConnectionName: $(azure_service_principal_name)
+      ${{ if eq(parameters.usePublicPool, false) }}:
+        pool: ${{ variables.azureDevOpsPool }}
+      ${{ if eq(parameters.usePublicPool, true) }}:
+        pool: ${{ variables.publicPoolName }}
+      resourceGroupName: ${{ variables.mainResourceGroupName }}
+      dnsZoneSubscriptionID: $(private_dns_zone_subscription_id)
+      dnsZoneResourceGroupName: $(private_dns_zone_resource_group)
+      privateEndpointResourceGroupName: ${{ variables.mainResourceGroupName }}
+      kubectlVersion: ${{ variables.kubectlVersion }}
+      helmVersion: ${{ variables.helmVersion }}
+      dnsRecordsModules:
+        - ${{ if eq(parameters.enablersPrivateEndpoints, true) }}:
+          - module: ${{ variables.enablersModule }}
+        - ${{ if eq(parameters.infrastructurePrivateEndpoints, true) }}:
+          - module: ${{ variables.infrastructureModule }}
+        # - ${{ if eq(parameters.VerticaIp, true) }}:
+        #   - module: vertica_deployment
+        - ${{ if eq(parameters.AirflowIp, true) }}:
+          - module: airflow_deployment

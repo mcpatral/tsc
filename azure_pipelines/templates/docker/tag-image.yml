@@ -1,0 +1,29 @@
+parameters:
+  - name: sourceAcrName
+    displayName: Azure Container Registry name
+    type: string
+  - name: targetAcrName
+    displayName: Azure Container Registry name
+    type: string
+  - name: imageNames
+    displayName: Docker image names with tags
+    type: object
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+  - name: workingDirectory
+    displayName: Docker working directory
+    type: string
+
+steps:
+  - ${{ each imageName in parameters.imageNames }}:
+    - task: Bash@3
+      displayName: Docker tag ${{ imageName }}
+      ${{ if ne(parameters.condition, '') }}:
+        condition: ${{ parameters.condition }}
+      inputs:
+        targetType: 'inline'
+        script: |
+          docker tag ${{ parameters.sourceAcrName }}/${{ imageName }} ${{ parameters.targetAcrName }}/${{ imageName }}
+        workingDirectory: ${{ parameters.workingDirectory }}

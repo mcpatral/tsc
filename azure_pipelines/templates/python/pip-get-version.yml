@@ -1,0 +1,16 @@
+parameters:
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+
+steps:
+  - task: Bash@3
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    displayName: 'Get Python and pip version'
+    inputs:
+      targetType: 'inline'
+      script: |
+        python3 --version
+        python3 -m pip --version

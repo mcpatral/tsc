@@ -1,0 +1,74 @@
+parameters:
+  - name: useDocker
+    displayName: Use Docker CLI to sync ACRs
+    type: boolean
+    default: true
+  - name: sourceAcrName
+    displayName: Source Azure Container registry name
+    type: string
+    default: acrdevdaweucentralmanual
+  - name: targetAcrName
+    displayName: Target Azure Container registry name
+    type: string
+  - name: imageNames
+    displayName: Docker image names with tags
+    type: object
+  - name: sourceAcrSubscriptionId
+    displayName: Source ACR Azure subscription ID
+    type: string
+  - name: sourceAcrResourceGroup
+    displayName: Source ACR Azure resource group name
+    type: string
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name which has access to source and target
+    type: string
+  - name: workingDirectory
+    displayName: Commands working directory
+    type: string
+
+steps:
+  - ${{ if parameters.useDocker }}:
+    - template: azcli/acr-login.yml
+      parameters:
+        azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+        acrSubscriptionId: ${{ parameters.sourceAcrSubscriptionId }}
+        acrName: ${{ parameters.sourceAcrName }}
+        workingDirectory: ${{ parameters.workingDirectory }}
+
+    - template: azcli/acr-login.yml
+      parameters:
+        azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+        acrName: ${{ parameters.targetAcrName }}
+        workingDirectory: ${{ parameters.workingDirectory }}
+
+    - template: docker/pull-push-image.yml
+      parameters:
+        acrName: ${{ parameters.sourceAcrName }}.azurecr.io
+        action: pull
+        workingDirectory: ${{ parameters.workingDirectory }}
+        imageNames: ${{ parameters.imageNames }}
+
+    - template: docker/tag-image.yml
+      parameters:
+        sourceAcrName: ${{ parameters.sourceAcrName }}.azurecr.io
+        targetAcrName: ${{ parameters.targetAcrName }}.azurecr.io
+        workingDirectory: ${{ parameters.workingDirectory }}
+        imageNames: ${{ parameters.imageNames }}
+
+    - template: docker/pull-push-image.yml
+      parameters:
+        acrName: ${{ parameters.targetAcrName }}.azurecr.io
+        action: push
+        workingDirectory: ${{ parameters.workingDirectory }}
+        imageNames: ${{ parameters.imageNames }}
+
+  - ${{ if not(parameters.useDocker) }}:
+    - template: azcli/acr-import-image.yml
+      parameters:
+        azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+        sourceAcrName: ${{ parameters.sourceAcrName }}
+        sourceAcrSubscriptionId: ${{ parameters.sourceAcrSubscriptionId }}
+        sourceAcrResourceGroup: ${{ parameters.sourceAcrResourceGroup }}
+        targetAcrName: ${{ parameters.targetAcrName }}
+        imageNames: ${{ parameters.imageNames }}
+        workingDirectory: ${{ parameters.workingDirectory }}

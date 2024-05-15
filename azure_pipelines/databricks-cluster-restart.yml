@@ -1,0 +1,77 @@
+parameters:
+  - name: azureServiceConnectionName
+    type: string
+  - name: terraformVersion
+    type: string
+  - name: terraformResourceGroupName
+    type: string
+  - name: terraformSaName
+    type: string
+  - name: terraformBackendContainerName
+    type: string
+  - name: mainResourceGroupName
+    type: string
+  - name: contentModule
+    type: string
+  - name: infrastructureModule
+    type: string    
+  - name: pool
+    type: string
+  - name: workingDirectory
+    type: string
+  - name: dependsOn
+    type: object
+    default: []
+  - name: condition
+    displayName: Condition to run the stage
+    type: string
+    default: ""
+
+stages:
+  - stage: databricks_cluster_restart
+    displayName: 'Restart clusters'
+    dependsOn: ${{ parameters.dependsOn }}
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    jobs:
+      - job: databricks_cluster_restart
+        displayName: 'Restart clusters'
+        pool: 
+          ${{ if ne(parameters['pool'], 'ubuntu-latest') }}:
+            name: ${{ parameters.pool }}
+          ${{ if eq(parameters['pool'], 'ubuntu-latest') }}:
+            vmImage: ${{ parameters.pool }}
+        steps:  
+          - template: templates/terraform-outputs.yml
+            parameters:
+              azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+              workingDirectory: $(System.DefaultWorkingDirectory)/terraform/${{ parameters.infrastructureModule }}
+              terraformVersion: ${{ parameters.terraformVersion }}
+              terraformResourceGroupName: ${{ parameters.terraformResourceGroupName }}
+              terraformSaName: ${{ parameters.terraformSaName }}
+              terraformBackendContainerName: ${{ parameters.terraformBackendContainerName }}      
+                
+          - template: templates/terraform-outputs.yml
+            parameters:
+              azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+              workingDirectory: $(System.DefaultWorkingDirectory)/terraform/${{ parameters.contentModule }}
+              terraformVersion: ${{ parameters.terraformVersion }}
+              terraformResourceGroupName: ${{ parameters.terraformResourceGroupName }}
+              terraformSaName: ${{ parameters.terraformSaName }}
+              terraformBackendContainerName: ${{ parameters.terraformBackendContainerName }}
+
+          - template: templates/databricks/databricks-installation-and-login.yml
+            parameters:
+              azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+              resourceGroupName: ${{ parameters.mainResourceGroupName }}
+              databricksWorkspaceName: $(terraform_out_db_workspace_name)
+
+          - template: templates/databricks/databricks-restart-cluster.yml
+            parameters:
+              databricksHost: $(terraform_out_db_workspace_host)
+              clusterId: $(terraform_out_databricks_provision_cluster_id)
+
+          - template: templates/databricks/databricks-restart-cluster.yml
+            parameters:
+              databricksHost: $(terraform_out_db_workspace_host)            
+              clusterId: $(terraform_out_databricks_single_cluster_id)              

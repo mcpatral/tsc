@@ -1,0 +1,111 @@
+airflow:
+  serviceAccount: airflow
+  namespace: airflow
+
+verticaOperator:
+  serviceAccount: verticadb-operator-controller-manager
+
+calico:
+  cidrs:
+    endpoints: null
+    aks:
+      internalApi: 10.0.0.1/32
+      nodes: null
+      azureComm: 168.63.129.16/32
+
+vertica:
+  image:
+    repo: acrdevdaweucentralmanual.azurecr.io
+    name: images/vertica/vertica-k8s
+    tag: 12.0.4-0-latest
+    pullPolicy: Always
+  
+  imagePullSecrets: null
+
+  dbName: gaia
+  initPolicy: Create
+  shardCount: 6
+  licenseFile: null # Optional. If omitted, Community license is used
+  superUser:
+    password: null # Required
+
+  storageAccount:
+    name: null # Required
+    containerName: null # Required
+    endpoint: null # Required - TODO: Helpers
+
+  local:
+    storageClass: null # Uses default K8S storage class if not set
+    requestSize: 500Gi
+    depotVolume: PersistentVolume # You cannot change the depot volume type on an existing database
+    depotPath: /depot
+    dataPath: /data
+  
+  volumes: null
+  volumeMounts: null
+  securityContext: null
+  affinity: {}
+  nodeSelector: {}
+  tolerations: []
+
+  subclusters:
+    primary:
+      isPrimary: true
+      size: 3
+      # Resources review is needed
+      resources:
+        requests:
+          cpu: 400m
+          memory: 750Mi
+        limits:
+          cpu: 400m
+          memory: 1Gi
+      service:
+        name: connections
+        type: LoadBalancer
+        annotations:
+          service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+      verticaAutoscaler: 
+        containerName: server
+        scalingGranularity: Pod 
+        #scalingGranularity: Subcluster
+
+  sidecars:
+    vlogger:
+      image:
+        repo: acrdevdaweucentralmanual.azurecr.io
+        name: images/vertica/vertica-logger
+        tag: 1.0.0-latest
+      # resources can be used but not tested with autoscaling, metrics from prometheus are needed to tune this data.
+      # resources:
+      #   requests:
+      #     cpu: 100m
+      #     memory: 300Mi
+      #   limits:
+      #     cpu: 200m
+      #     memory: 500Mi
+      # Volumes are for log persistance
+      # volumeMounts:
+      #   - name: logger-vol
+      #     mountPath: /verticalogger
+      # volumes:
+      #   - name: logger-vol
+      #     emptyDir: {}
+  
+  # Example of Event trigger commented below
+  eventTriggers: null
+    # create-table:
+    #   conditions:
+    #     - type: DBInitialized
+    #       status: "True"
+    #   template: # Please follow K8S API PodSpec structure defining this object
+    #     restartPolicy: OnFailure
+    #     imagePullSecrets: null
+    #     containers:
+    #       - name: main
+    #         command: ["/opt/vertica/bin/vsql", "-h", "verticadb-sample-defaultsubcluster", "-f", "CREATE TABLE T1 (C1 INT);"]
+    #         image:
+    #           repo: acrdevdaweucentralmanual.azurecr.io
+    #           name: vertica/vertica-k8s
+    #           tag: latest
+    #           pullPolicy: Always

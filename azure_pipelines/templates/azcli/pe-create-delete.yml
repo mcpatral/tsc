@@ -1,0 +1,77 @@
+parameters:
+  - name: privateEndpointBaseName
+    displayName: Private endpoint resource base name
+    type: string
+  - name: resourceGroupName
+    displayName: Resource group name
+    type: string
+  - name: privateEndpointConnectionResourceId
+    displayName: Resource ID to associate with private endpoint
+    type: string
+  - name: privateEndpointSubnetId
+    displayName: Private endpoint subnet ID
+    type: string
+  - name: subresourceName
+    displayName: Private endpoint sub resource name
+    type: string
+    default: ""
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+  - name: workingDirectory
+    displayName: Azure CLI working directory
+    type: string
+  - name: location
+    displayName: Location of resources backend 
+    type: string
+  - name: action
+    displayName: Create or delete Private Endpoint
+    type: string
+    values:
+      - create
+      - delete
+
+steps:
+  - task: AzureCLI@2
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    displayName: ${{ parameters.action }} private endpoint
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        postfix=""
+        peParams=""
+
+        if [[ "${{ parameters.subresourceName }}" != "" ]]; then
+          peParams="--group-id ${{ parameters.subresourceName }} "
+          postfix="-${{ parameters.subresourceName }}"
+        fi
+
+        if [[ "${{ parameters.action }}" == "create" ]]; then
+          checkPe=$(az network private-endpoint show --name pe-${{ parameters.privateEndpointBaseName }}$postfix --resource-group ${{ parameters.resourceGroupName }} --query "name" --output tsv)
+          if [[ $? -eq 0 ]]; then
+            echo "$checkPe already exist. Exiting..."
+            echo "##vso[task.logissue type=warning;]The private endpoint already exist. Skipping further steps."
+            exit 0
+          fi
+
+          peParams+="--connection-name psc-${{ parameters.privateEndpointBaseName }}$postfix --subnet ${{ parameters.privateEndpointSubnetId }} "
+          peParams+="--location ${{ parameters.location }} --private-connection-resource-id ${{ parameters.privateEndpointConnectionResourceId }}"
+        else
+          checkPe=$(az network private-endpoint show --name pe-${{ parameters.privateEndpointBaseName }}$postfix --resource-group ${{ parameters.resourceGroupName }} --query "name" --output tsv)
+          if [[ $? -ne 0 ]]; then
+            echo "Unable to find private endpoint pe-${{ parameters.privateEndpointBaseName }}$postfix. Exiting..."
+            echo "##vso[task.logissue type=warning;]The private endpoint already doesn't exist. Skipping further steps."
+            exit 0
+          fi
+        fi
+
+        az network private-endpoint ${{ parameters.action }} $peParams --name pe-${{ parameters.privateEndpointBaseName }}$postfix --resource-group ${{ parameters.resourceGroupName }}
+      workingDirectory: ${{ parameters.workingDirectory }}
+            

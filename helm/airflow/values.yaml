@@ -1,0 +1,449 @@
+#secrets part
+airflow_pwd:
+airflow_oauth_spn_client_id:
+airflow_oauth_spn_client_secret:
+airflow_dbwconnection_token:
+#
+airflow_sa_mi_client_id:
+#
+airflow_tenant_id:
+# airflow_vertica_user:
+# airflow_vertica_pwd:
+#configmap part
+airflow_dbwconnection_host:
+airflow_sa_temp_account:
+airflow_sa_dl_account:
+# airflow_vertica_host:
+
+airflow_sa_name:
+airflow_sa_key:
+airflow_sa_rg_name:
+airflow_sa_container_name:
+airflow_disk_id:
+
+airflow_tls_crt: null
+airflow_tls_key: null
+
+#Controlled environment or not
+vnetPeered:
+mainDeployment: true
+
+#Airflow group names
+airflow_viewer_group_name:
+airflow_user_group_name:
+airflow_admin_group_name:
+
+ingressController:
+  name: ingress-nginx
+  namespace: ingress-controller
+
+# vertica:
+#   port: 5433
+#   namespace: vertica
+
+calico:
+  cidrs:
+    postgresql: null
+    endpoints: null
+    databricks:
+      webapp_primary: 52.232.19.246/32
+      webapp_weu_secondary: 40.74.30.80/32
+      webapp_neu_secondary: 20.38.84.81/32
+    microsoft:
+      login_first: 20.20.32.0/19
+      login_second: 20.190.128.0/18
+      login_third: 20.231.128.0/19
+      login_fourth: 40.126.0.0/18
+    aks:
+      internalApi: 10.0.0.1/32
+      nodes: null
+      services: 10.0.0.0/16
+      pods: 10.244.0.0/16
+    metadata:
+      endpoint: 169.254.169.254/32
+
+osm:
+  hosts:
+    tls:
+      kubernetes: null
+      databricks: null
+      microsoft_login: login.microsoftonline.com
+    smtp:
+      azure_communication: smtp.azurecomm.net
+
+airflow:
+  envoyHelper:
+    enabled: true
+    logLevel: FATAL
+    image:
+      repository: null
+      tag: null
+      pullPolicy: Always
+    envoy:
+      port: 15000
+      ready:
+        check: true
+        port: 15000
+      endpoint:
+        ready: /ready
+        quit: /quitquitquit
+  ###################################
+  # Airflow - Common Configs
+  ################################### TODO
+  serviceAccount:
+    name: airflow
+  airflow:
+    init:
+      useKubectl: true
+    image:
+      repository: null
+      tag: null
+      ## values: Always or IfNotPresent
+      pullPolicy: Always
+      pullSecret: ""
+      uid: 50000
+      # TODO: Change group to nonroot
+      gid: 0
+    executor: KubernetesExecutor
+    fernetKey:
+    config:
+      AIRFLOW__CORE__TEST_CONNECTION: "Enabled"
+      AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: 60
+      AIRFLOW__WEBSERVER__BASE_URL:
+      AIRFLOW__WEBSERVER__NAVBAR_COLOR: "#80DFFF"
+      AIRFLOW__WEBSERVER__INSTANCE_NAME:
+      AIRFLOW__API__AUTH_BACKENDS: "airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session"
+      AIRFLOW_DATABASE_USE_SSL: yes
+      AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG: 16
+      AIRFLOW__CORE__MAX_ACTIVE_RUNS_PER_DAG: 16
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: false
+      AIRFLOW__CORE__PARALLELISM: 32
+      AIRFLOW__CORE__DEFAULT_POOL_TASK_SLOT_COUNT: 256
+      AIRFLOW__DATABASE__SQL_ALCHEMY_MAX_OVERFLOW: 60
+      AIRFLOW__DATABASE__SQL_ALCHEMY_POOL_SIZE: 0
+      AIRFLOW_VAR_ENVIRONMENT:
+      AIRFLOW_VAR_ADLS_STORAGE_NAME:
+      AIRFLOW_VAR_TEMP_STORAGE_NAME:
+      AIRFLOW_VAR_DATABRICKS_CLUSTER_ID:
+      AIRFLOW__SMTP__SMTP_HOST:
+      AIRFLOW__SMTP__SMTP_STARTTLS: True
+      AIRFLOW__SMTP__SMTP_SSL: False
+      AIRFLOW__SMTP__SMTP_USER:
+      AIRFLOW__SMTP__SMTP_PASSWORD:
+      AIRFLOW__SMTP__SMTP_PORT:
+      AIRFLOW__SMTP__SMTP_MAIL_FROM:
+      AIRFLOW__SCHEDULER__MAX_TIS_PER_QUERY: 0 # defaults to AIRFLOW__CORE__PARALLELISM when 0
+      AIRFLOW__SCHEDULER__ORPHANED_TASKS_CHECK_INTERVAL: 60.0
+      AIRFLOW__SCHEDULER__SCHEDULER_HEALTH_CHECK_THRESHOLD: 120
+      AIRFLOW__SCHEDULER__SCHEDULER_ZOMBIE_TASK_THRESHOLD: 30
+      AIRFLOW__KUBERNETES_EXECUTOR__WORKER_PODS_CREATION_BATCH_SIZE: 128
+      AIRFLOW__KUBERNETES_EXECUTOR__WORKER_PODS_QUEUED_CHECK_INTERVAL: 30
+      AIRFLOW__KUBERNETES_EXECUTOR__DELETE_OPTION_KWARGS: '{"grace_period_seconds": 0}'
+      AIRFLOW__LOGGING__LOGGING_LEVEL: "INFO"
+    podAnnotations: {}
+    
+    # Pod Security context
+    defaultSecurityContext:
+      # TODO: Change fsGroup when "root" group will be stopped to be used
+      fsGroup: 0
+      # TODO: Rewrite Airflow chart to extend container's security context instead of Pod security context. 
+      # OSM Healthcheck image (mcr.microsoft.com/oss/openservicemesh/osm-healthcheck) uses root user and conflicts with Pod security context settings
+      # runAsNonRoot: true
+      # allowPrivilegeEscalation: false
+
+    defaultNodeSelector:
+      pool: application
+    
+    kubernetesPodTemplate:
+      podLabels:
+        app: airflow
+    extraEnv:
+    # extraEnvVars:
+    # - name: AIRFLOW_DATABASE_USE_SSL
+    #   value: yes
+    # - name: AIRFLOW_REDIS_USE_SSL
+    #   value: yes
+    # pools:
+    #   - name: vertica_basic_pool
+    #     description: "vertica pool"
+    #     slots: 2
+
+    ###################################
+    # Airflow - Users
+    ################################### TODO
+    users:
+    ##check and make role / user optional
+      - username: admin
+        password: ${AIRFLOW_ADMIN_PWD}
+        role: Admin
+        email: admin@example.com
+        firstName: admin
+        lastName: admin
+    usersTemplates:
+      AIRFLOW_ADMIN_PWD:
+        kind: secret
+        name: users
+        key: airflow_pwd
+
+    ###################################
+    # Airflow - Connections
+    ###################################
+    connections:
+      - id: databricks_default
+        type: databricks
+        description: My Databricks Azure connection
+        host: "${DATABRICKS_HOST}"
+        login: "token" #https://airflow.apache.org/docs/apache-airflow-providers-databricks/stable/connections/databricks.html , needed for encryption although duplicate
+        password: "${DATABRICKS_TOKEN}"
+      - id: "azure_data_lake_dl_bronze"
+        type: adls
+        description: "Storage account Connection"
+        login: ${DATALAKE_BRONZE_SYSTEM_LOGIN}
+        extra: |-
+          { "tenant": "${AIRFLOW_TENANT}", "account_name": "${DATALAKE_NAME}" }
+      - id: "azure_data_lake_dl_landing"
+        type: adls
+        description: "Storage account Connection"
+        login: ${DATALAKE_LANDING_SYSTEM_LOGIN}
+        extra: |-
+          { "tenant": "${AIRFLOW_TENANT}", "account_name": "${DATALAKE_NAME}" }
+      - id: "azure_data_lake_temp"
+        type: adls
+        description: "Storage account Connection for Temp"
+        login: ${TEMP_SYSTEM_LOGIN}
+        extra: |-
+          { "tenant": "${AIRFLOW_TENANT}", "account_name": "${TEMP_NAME}" }
+      # - id: vertica_default
+      #   type: vertica
+      #   description: Vertica connection
+      #   host: ${VERTICA_HOST}
+      #   login: ${VERTICA_USER}
+      #   password: ${VERTICA_PASSWORD}
+    connectionsTemplates:
+      TEMP_NAME:
+        kind: configmap
+        name: connections-configmap
+        key: airflow_sa_temp_account
+      TEMP_SYSTEM_LOGIN:
+        kind: secret
+        name: connections-secrets
+        key: airflow_sa_mi_client_id
+      DATALAKE_NAME:
+        kind: configmap
+        name: connections-configmap
+        key: airflow_sa_dl_account
+      DATALAKE_BRONZE_SYSTEM_LOGIN:
+        kind: secret
+        name: connections-secrets
+        key: airflow_sa_mi_client_id
+      DATALAKE_LANDING_SYSTEM_LOGIN:
+        kind: secret
+        name: connections-secrets
+        key: airflow_sa_mi_client_id
+      AIRFLOW_TENANT:
+        kind: secret
+        name: connections-secrets
+        key: airflow_tenant_id
+      # VERTICA_HOST:
+      #   kind: configmap
+      #   name: connections-configmap
+      #   key: airflow_vertica_host
+      # VERTICA_USER:
+      #   kind: secret
+      #   name: connections-secrets
+      #   key: airflow_vertica_user
+      # VERTICA_PASSWORD:
+      #   kind: secret
+      #   name: connections-secrets
+      #   key: airflow_vertica_pwd
+      DATABRICKS_HOST:
+        kind: configmap
+        name: connections-configmap
+        key: airflow_dbwconnection_host
+      DATABRICKS_TOKEN:
+        kind: secret
+        name: connections-secrets
+        key: airflow_dbwconnection_token
+    # connectionsUpdate: true
+
+  ###################################
+  # Airflow - Scheduler Configs
+  ###################################
+  scheduler:
+    replicas: 1
+    logCleanup:
+      enabled: false
+    resources:
+      limits:
+        cpu: 600m
+        memory: 900Mi
+      requests:
+        cpu: 400m
+        memory: 500Mi
+    livenessProbe:
+      enabled: true
+      periodSeconds: 30
+      timeoutSeconds: 30
+      taskCreationCheck:
+        enabled: true
+        thresholdSeconds: 180
+        schedulerAgeBeforeCheck: 180
+
+  ###################################
+  # Airflow - WebUI Configs
+  ###################################
+  web:
+    webserverConfig:
+      existingSecret: "airflow-webserver-config"
+    replicas: 2
+    podDisruptionBudget:
+      enabled: false
+      maxUnavailable: ""
+      minAvailable: ""
+    service:
+      sessionAffinity: "None"
+      type: ClusterIP
+      externalPort: 8080
+      loadBalancerIP: ""
+      nodePort:
+        http: ""
+    serializeDAGs: false
+    initialStartupDelay: 0
+    minReadySeconds: 5
+    readinessProbe:
+      enabled: false
+      scheme: HTTP
+      initialDelaySeconds: 10
+      periodSeconds: 10
+      timeoutSeconds: 1
+      successThreshold: 1
+      failureThreshold: 3
+    livenessProbe:
+      enabled: true
+      scheme: HTTP
+      initialDelaySeconds: 300
+      periodSeconds: 60
+      timeoutSeconds: 35
+      successThreshold: 1
+      failureThreshold: 6
+    secretsDir: /var/airflow/secrets
+    secretsMap: ""
+
+  ###################################
+  # Airflow - Worker Configs
+  ###################################
+  workers:
+    enabled: false
+
+  ###################################
+  # Airflow - Flower Configs
+  ###################################
+  flower:
+    enabled: false
+
+  ###################################
+  ## COMPONENT | Triggerer
+  ###################################
+  triggerer:
+    ## if the airflow triggerer should be deployed
+    enabled: true
+
+    ## the number of triggerer Pods to run
+    replicas: 1
+
+    ## resource requests/limits for the triggerer Pods
+    ## [SPEC] https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.20/#resourcerequirements-v1-core
+
+    ## maximum number of triggers each triggerer will run at once (sets `AIRFLOW__TRIGGERER__DEFAULT_CAPACITY`)
+    capacity: 1000
+
+  ###################################
+  # Airflow - Logs Configs
+  ###################################
+  logs:
+    path: /opt/airflow/logs
+    persistence:
+      enabled: true
+      existingClaim: pvc-blob-logs
+      accessMode: ReadWriteMany
+
+  ###################################
+  # Airflow - DAGs Configs
+  ###################################
+  dags:
+    path: /opt/airflow/dags
+    persistence:
+      enabled: true
+      existingClaim: pvc-blob
+      accessMode: ReadOnlyMany
+    gitSync:
+      enabled:
+      repo:
+      branch:
+      syncWait:
+      sshSecret:
+      sshSecretKey:
+      subPath:
+      resources:
+        requests:
+          ## IMPORTANT! for autoscaling to work with gitSync
+          memory: "64Mi"
+
+  pgbouncer:
+    enabled: false
+    # securityContext:
+    #   # TODO: Rewrite Airflow chart to extend container's security context instead of Pod security context. 
+    #   # OSM Healthcheck image (mcr.microsoft.com/oss/openservicemesh/osm-healthcheck) uses root user and conflicts with Pod security context settings
+    #   runAsNonRoot: true
+    #   allowPrivilegeEscalation: false
+
+  ###################################
+  ## CONFIG | Kubernetes Ingress
+  ###################################
+  ingress:
+    enabled: true
+    apiVersion: networking.k8s.io/v1
+    web:
+      annotations:
+        nginx.ingress.kubernetes.io/backend-protocol: HTTPS
+        nginx.ingress.kubernetes.io/configuration-snippet: proxy_ssl_name "airflow.airflow.cluster.local";
+        nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+        nginx.ingress.kubernetes.io/proxy-ssl-secret: kube-system/osm-ingress-client-cert
+        nginx.ingress.kubernetes.io/proxy-ssl-verify: "on"
+      host: ""
+      path: ""
+      ingressClassName: "nginx"
+      tls:
+        enabled: true
+        secretName: airflow-ingress-tls
+
+  ###################################
+  # Kubernetes - RBAC
+  ###################################
+  rbac:
+    create: true
+    events: false
+
+  ###################################
+  # Database - PostgreSQL Chart
+  # - https://github.com/helm/charts/tree/master/stable/postgresql
+  ###################################
+  postgresql:
+    enabled: false
+
+  externalDatabase:
+    type: postgres
+    host:
+    port: 5432
+    database:
+    user:
+    password:
+
+    # use this for any extra connection-string settings, e.g. ?sslmode=disable
+    properties: "?sslmode=require"
+  ###################################
+  # Database - Redis Chart
+  # - https://github.com/helm/charts/tree/master/stable/redis
+  ###################################
+  redis:
+    enabled: false

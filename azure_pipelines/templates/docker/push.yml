@@ -1,0 +1,19 @@
+parameters:
+  - name: acrName
+    displayName: Azure Container Registry name
+    type: string
+  - name: imageName
+    displayName: Docker image names with tags
+    type: string
+  - name: workingDirectory
+    displayName: Docker working directory
+    type: string
+
+steps:
+    - task: Bash@3
+      displayName: Docker push
+      inputs:
+        targetType: 'inline'
+        script: |
+          docker push ${{ parameters.acrName }}/${{ parameters.imageName }}
+        workingDirectory: ${{ parameters.workingDirectory }}

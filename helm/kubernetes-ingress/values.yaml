@@ -1,0 +1,103 @@
+ingress-nginx:
+  serviceAccount:
+    create: true
+    # TODO: Investigate disablement of ServiceAccount token automount. Check whether it should be disabled for Ingress Controller
+    automountServiceAccountToken: true
+  
+  controller:
+    replicaCount: 2
+    watchIngressWithoutClass: true
+
+    containerPort:
+      http: 80
+      https: 443
+
+    livenessProbe:
+      httpGet:
+        port: 10254
+    readinessProbe:
+      httpGet:
+        port: 10254
+
+    labels:
+      controller: ingress-nginx
+
+    metrics:
+      port: 10254
+      service:
+        servicePort: 10254
+      serviceMonitor:
+        enabled: null
+        additionalLabels: {}
+      enabled: null
+
+    image:
+      registry: acrdevdaweucentralmanual.azurecr.io
+      image: images/ingress-nginx/controller
+      tag: v1.8.1
+      pullPolicy: Always
+      digest: ""
+      allowPrivilegeEscalation: false
+
+    service:
+      externalTrafficPolicy: Local
+      enableHttp: false
+      enableHttps: true
+      annotations:
+        service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+        service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: /healthz
+
+    admissionWebhooks:
+      port: 8443
+      service:
+        servicePort: 443
+      patch:
+        image:
+          registry: acrdevdaweucentralmanual.azurecr.io
+          image: images/ingress-nginx/kube-webhook-certgen
+          tag: v1.4.0
+          digest: ""
+          pullPolicy: Always
+        nodeSelector:
+          kubernetes.io/os: linux
+          pool: application
+
+    config:
+      strict-validate-path-type: true
+
+    enableAnnotationValidations: true  
+    allowSnippetAnnotations: true
+
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      runAsUser: 101
+      # TODO: Investigate enablement of read-only root filesystem in the future. Check if it is possible.
+      readOnlyRootFilesystem: false
+      capabilities:
+        drop:
+        - ALL
+        add:
+        - NET_BIND_SERVICE
+
+    nodeSelector:
+      kubernetes.io/os: linux
+      pool: application
+    
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - topologyKey: "kubernetes.io/hostname"
+            labelSelector:
+              matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                - ingress-nginx
+              - key: app.kubernetes.io/instance
+                operator: In
+                values:
+                - ingress-nginx
+              - key: app.kubernetes.io/component
+                operator: In
+                values:
+                - controller

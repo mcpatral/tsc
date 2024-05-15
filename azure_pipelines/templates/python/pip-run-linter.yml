@@ -1,0 +1,14 @@
+parameters:
+  - name: workingDirectory
+    type: string
+
+steps:
+  - task: Bash@3
+    displayName: 'Flake8 linting'
+    inputs:
+      targetType: 'inline'
+      script: |
+        echo 'Now running linter...'
+        python3 -m flake8 --benchmark
+        echo 'done'
+      workingDirectory: ${{ parameters.workingDirectory }}

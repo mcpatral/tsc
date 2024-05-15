@@ -1,0 +1,30 @@
+parameters:
+- name: databricksHost
+  type: string
+- name: clusterId
+  displayName: cluster id
+  type: string
+
+- name: condition
+  displayName: Run conditions for task
+  type: string
+  default: ""
+
+steps:
+- task: Bash@3
+  ${{ if ne(parameters.condition, '') }}:
+    condition: ${{ parameters.condition }}
+  displayName: Restart Databricks cluster
+  inputs:
+    targetType: 'inline'
+    script: |
+      echo "Restarting"
+      command_output=$(databricks clusters restart ${{ parameters.clusterId }})
+      echo "$command_output"
+      if [[ "$command_output" == *unexpected* ]]; then
+        echo "Cluster stopped. Starting..."
+        databricks clusters start ${{ parameters.clusterId }}
+      fi
+  env:
+    DATABRICKS_HOST: ${{ parameters.databricksHost }}      
+      

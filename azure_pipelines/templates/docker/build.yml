@@ -1,0 +1,22 @@
+parameters:
+  - name: acrName
+    displayName: Azure Container Registry name
+    type: string
+  - name: imageName
+    displayName: Docker image names with tags
+    type: string
+  - name: workingDirectory
+    displayName: Docker working directory
+    type: string
+  - name: dockerArgs
+    displayName: Docker args
+    type: string    
+
+steps:
+    - task: Bash@3
+      displayName: Docker build
+      inputs:
+        targetType: 'inline'
+        script: |
+          docker build --push -t ${{ parameters.acrName }}.azurecr.io/${{ parameters.imageName }} ${{ parameters.dockerArgs }} . 
+        workingDirectory: ${{ parameters.workingDirectory }}

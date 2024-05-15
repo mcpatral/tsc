@@ -1,0 +1,113 @@
+parameters:
+- name: azureServiceConnectionName
+  type: string
+- name: dependsOn
+  type: object
+  default: []
+- name: pool
+  displayName: Agent pool name to run jobs
+  type: string
+- name: terraformVersion
+  type: string
+- name: terraformResourceGroupName
+  displayName: Resource group for Terraform state of environment
+  type: string
+- name: terraformSaName
+  displayName: Storage Account name for Terraform state of environment
+  type: string
+- name: terraformBackendContainerName
+  displayName: SA Container name for Terraform state of environment
+  type: string
+- name: saPublicAccessUpdate
+  displayName: Storage Account Public Access Update
+  type: boolean
+- name: rotateDnsRecords
+  displayName: Rotate Dns Records
+  type: boolean
+- name: sourceEnablersModule
+  displayName: Source Enablers Module
+  type: string
+- name: targetEnablersModule
+  displayName: Target Enablers Module
+  type: string
+- name: sourceInfrastructureModule
+  displayName: Source Infrastructure Module
+  type: string
+- name: targetInfrastructureModule
+  displayName: Target Infrastructure Module
+  type: string
+- name: dnsZoneSubscriptionID
+  displayName: Private DNS zone's for A records subscription ID
+  type: string
+- name: dnsZoneResourceGroupName
+  displayName: Dns Zone Resource Group Name
+  type: string
+- name: privateEndpointResourceGroupName
+  displayName: Private Endpoint Resource Group Name
+  type: string
+- name: airflowSaContainersToCopy
+  displayName: Airflow Storage Account Containers To Copy
+  type: object
+- name: dnsRecordsModules
+  displayName: DNS Records Modules
+  type: object
+- name: condition
+  displayName: Condition to run the stage
+  type: string
+  default: ""
+- name: kubectlVersion
+  displayName: Kubectl version
+  type: string
+- name: helmVersion
+  displayName: Helm version
+  type: string
+
+stages:
+- stage: blob_copy_sa_airflow
+  ${{ if ne(parameters.condition, '') }}:
+    condition: ${{ parameters.condition }}
+  dependsOn: ${{ parameters.dependsOn }}
+  displayName: Blob copy stage for SA airflow
+  jobs:
+  - ${{ if eq(parameters.rotateDnsRecords, true) }}: 
+    - template: rotate-a-dns-records-job.yml
+      parameters:
+        azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+        pool: ${{ parameters.pool }}
+        dnsZoneSubscriptionID: ${{ parameters.dnsZoneSubscriptionID }}
+        dnsZoneResourceGroupName: ${{ parameters.dnsZoneResourceGroupName }}
+        privateEndpointResourceGroupName: ${{ parameters.privateEndpointResourceGroupName }}
+        dnsRecordsModules: ${{ parameters.dnsRecordsModules }}
+        kubectlVersion: ${{ parameters.kubectlVersion }}
+        helmVersion: ${{ parameters.helmVersion }}
+        mainPipelineExecution: true
+        condition: and(not(failed()), not(canceled()))
+  - job: blob_copy_sa_airflow_job
+    displayName: Blob copy job for SA airflow
+    ${{ if eq(parameters.rotateDnsRecords, true) }}:
+      dependsOn: 
+        - rotate_a_dns_records
+    pool:
+      ${{ if ne(parameters.pool, 'ubuntu-latest') }}:
+        name: ${{ parameters.pool }}
+      ${{ if eq(parameters.pool, 'ubuntu-latest') }}:
+        vmImage: ${{ parameters.pool }}
+    steps:
+    - template: templates/terraform-blob-copy-airflow-sa-steps.yml
+      parameters:
+        azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+        terraformVersion: ${{ parameters.terraformVersion }}
+        terraformResourceGroupName: ${{ parameters.terraformResourceGroupName }}
+        terraformSaName: ${{ parameters.terraformSaName }}
+        terraformBackendContainerName: ${{ parameters.terraformBackendContainerName }}
+        saPublicAccessUpdate: ${{ parameters.saPublicAccessUpdate }}
+        sourceEnablersModule: ${{ parameters.sourceEnablersModule }}
+        sourceInfrastructureModule: ${{ parameters.sourceInfrastructureModule }}
+        targetEnablersModule: ${{ parameters.targetEnablersModule }}
+        targetInfrastructureModule: ${{ parameters.targetInfrastructureModule }}
+        dnsZoneSubscriptionID: ${{ parameters.dnsZoneSubscriptionID }}
+        dnsZoneResourceGroupName: ${{ parameters.dnsZoneResourceGroupName }}
+        privateEndpointResourceGroupName: ${{ parameters.privateEndpointResourceGroupName }}
+        airflowSaContainersToCopy: ${{ parameters.airflowSaContainersToCopy }}
+        kubectlVersion: ${{ parameters.kubectlVersion }}
+        helmVersion: ${{ parameters.helmVersion }}

@@ -1,0 +1,15 @@
+steps:
+  - task: Bash@3
+    displayName: 'Dynamic variable creation task and COMMANDOPTIONS initialization'
+    inputs:
+      targetType: 'inline'
+      script: |
+        variables_env=$(env | grep TERRAFORM_IN)
+        while IFS=' ' read -ra variable; do
+          IFS='=' read -ra key_value <<< "$variable"
+          key=${key_value[0]}
+          value=${key_value[1]}
+          key_formatted="${key#TERRAFORM_IN_}"
+          echo "##vso[task.setvariable variable=TF_VAR_$key_formatted]$value"
+        done <<< "$variables_env"
+        echo "##vso[task.setvariable variable=COMMANDOPTIONS;issecret=false]-out=$(System.DefaultWorkingDirectory)/terraform.tfplan"

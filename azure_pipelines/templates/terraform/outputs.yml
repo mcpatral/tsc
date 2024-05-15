@@ -1,0 +1,31 @@
+parameters:
+  - name: workingDirectory
+    displayName: Terraform root module directory
+    type: string
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+
+steps:
+  - task: Bash@3
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    displayName: Assigning outputs to ADO variables
+    inputs:
+      targetType: 'inline'
+      script: |
+        terraform output -json > outputs.json
+        jq -r 'to_entries[] | select(.value.type=="number") | select(.value.sensitive==false) | "##vso[task.setvariable variable=terraform_out_" + .key + "]" + (.value.value|tostring)' outputs.json
+        echo
+        jq -r 'to_entries[] | select(.value.type=="number") | select(.value.sensitive==true) | "##vso[task.setvariable variable=terraform_out_" + .key + ";issecret=true]" + (.value.value|tostring)' outputs.json
+        echo
+        jq -r 'to_entries[] | select(.value.type=="string") | select(.value.sensitive==false) | "##vso[task.setvariable variable=terraform_out_" + .key + "]" + .value.value' outputs.json
+        echo
+        jq -r 'to_entries[] | select(.value.type=="string") | select(.value.sensitive==true) | "##vso[task.setvariable variable=terraform_out_" + .key + ";issecret=true]" + .value.value' outputs.json
+        echo
+        jq -r 'to_entries[] | select((.value.type!="string") and .value.type!="number") | select(.value.sensitive==false) | {key: .key, value: .value.value} | .key as $key | .value | to_entries[] | .key |= gsub("-"; "_") | {($key + "_" + .key): .value} | to_entries[] | "##vso[task.setvariable variable=terraform_out_" + .key + "]" + .value' outputs.json
+        echo
+        jq -r 'to_entries[] | select((.value.type!="string") and .value.type!="number") | select(.value.sensitive==true) | {key: .key, value: .value.value} | .key as $key | .value | to_entries[] | .key |= gsub("-"; "_") | {($key + "_" + .key): .value} | to_entries[] | "##vso[task.setvariable variable=terraform_out_" + .key + ";issecret=true]" + .value' outputs.json
+        echo
+      workingDirectory: ${{ parameters.workingDirectory }}

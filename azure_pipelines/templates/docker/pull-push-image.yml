@@ -1,0 +1,32 @@
+parameters:
+  - name: acrName
+    displayName: Azure Container Registry name
+    type: string
+  - name: imageNames
+    displayName: Docker image names with tags
+    type: object
+  - name: action
+    displayName: Action to do with network rule - add/remove
+    default: pull
+    values:
+      - pull
+      - push
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+  - name: workingDirectory
+    displayName: Docker working directory
+    type: string
+
+steps:
+  - ${{ each imageName in parameters.imageNames }}:
+    - task: Bash@3
+      displayName: Docker ${{ parameters.action }} ${{ imageName }}
+      ${{ if ne(parameters.condition, '') }}:
+        condition: ${{ parameters.condition }}
+      inputs:
+        targetType: 'inline'
+        script: |
+          docker ${{ parameters.action }} ${{ parameters.acrName }}/${{ imageName }}
+        workingDirectory: ${{ parameters.workingDirectory }}

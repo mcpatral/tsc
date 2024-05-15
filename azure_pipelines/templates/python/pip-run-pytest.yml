@@ -1,0 +1,16 @@
+parameters:
+  - name: environmentName
+    type: string
+
+  - name: workingDirectory
+    type: string
+
+steps:
+  - task: Bash@3
+    displayName: 'Running python tests'
+    inputs:
+      targetType: 'inline'
+      script: |
+        export ENVIRONMENT=${{ parameters.environmentName }}
+        python3 -m pytest -v
+      workingDirectory: ${{ parameters.workingDirectory }}

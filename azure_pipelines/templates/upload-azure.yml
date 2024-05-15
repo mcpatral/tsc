@@ -1,0 +1,29 @@
+# File: templates/upload-azure.yml
+parameters:
+  - name: azureSubscription
+    type: string
+    default: 'sc_datamngtdev_poc'
+
+  - name: destination
+    type: string
+
+  - name: storage
+    type: string
+
+  - name: containerName
+    type: string
+
+steps:
+- task: DownloadBuildArtifacts@1
+  displayName: 'Download Build Artifacts'
+  inputs:
+    artifactName: drop
+
+- task: AzureFileCopy@4
+  displayName: 'AzureBlob File Copy'
+  inputs:
+    SourcePath: '$(System.ArtifactsDirectory)/drop/*'
+    azureSubscription: ${{ parameters.azureSubscription }}
+    Destination: ${{ parameters.destination }}
+    storage: ${{ parameters.storage }}
+    ContainerName: ${{ parameters.containerName }}

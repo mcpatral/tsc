@@ -1,0 +1,62 @@
+apiVersion: crd.projectcalico.org/v1
+kind: NetworkPolicy
+metadata:
+  name: default.{{ .Release.Name }}-rules
+  namespace: {{ .Release.Namespace }}
+spec:
+  order: 10
+  types:
+    - Ingress
+    - Egress
+  selector: app.kubernetes.io/instance == '{{ .Release.Name }}-{{ .Release.Namespace }}'
+  ingress:
+    - action: Allow
+      protocol: TCP
+      destination:
+        ports:
+          - 5433
+          - 8443
+          - 5444
+      source:
+        nets:
+          - {{ .Values.calico.cidrs.aks.nodes }}
+          - {{ .Values.calico.cidrs.aks.azureComm }}
+    - action: Allow
+      protocol: TCP
+      destination:
+        ports:
+          - 5433
+      source:
+        serviceAccounts:
+          names:
+            - {{ .Values.airflow.serviceAccount }}
+        namespaceSelector: projectcalico.org/name == {{ .Values.airflow.namespace | squote }}
+    - action: Allow
+      protocol: TCP
+      source:
+        serviceAccounts:
+          names: 
+            - {{ .Values.verticaOperator.serviceAccount }}
+        namespaceSelector: projectcalico.org/name == {{ .Release.Namespace | squote }}
+    - action: Allow
+      protocol: UDP
+      source:
+        serviceAccounts:
+          names: 
+            - {{ .Values.verticaOperator.serviceAccount }}
+        namespaceSelector: projectcalico.org/name == {{ .Release.Namespace | squote }}
+  egress:
+    - action: Allow
+      protocol: TCP
+      destination:
+        serviceAccounts:
+          names: 
+            - {{ .Values.verticaOperator.serviceAccount }}
+        namespaceSelector: projectcalico.org/name == {{ .Release.Namespace | squote }}
+    - action: Allow
+      protocol: UDP
+      destination:
+        serviceAccounts:
+          names: 
+            - {{ .Values.verticaOperator.serviceAccount }}
+        namespaceSelector: projectcalico.org/name == {{ .Release.Namespace | squote }}

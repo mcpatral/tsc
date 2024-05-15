@@ -1,0 +1,362 @@
+parameters:
+  - name: azureServiceConnectionName
+    type: string
+  - name: terraformVersion
+    type: string
+  - name: kubectlVersion
+    type: string
+  - name: helmVersion
+    type: string
+  - name: osmVersion
+    displayName: Open Service Mesh CLI version to install
+    type: string
+    default: "1.2.4"
+  - name: dnsZoneSubscriptionID
+    displayName: Private DNS zone's for A records subscription ID
+    type: string
+  - name: dnsZoneResourceGroupName
+    displayName: Private DNS zone's for A records resource group name
+    type: string
+  - name: resourceGroupName
+    displayName: Environment resource group name
+    type: string
+  - name: terraformResourceGroupName
+    displayName: Resource group for TF
+    type: string
+  - name: terraformSaName
+    displayName: Storage Account name for TF
+    type: string
+  - name: terraformBackendContainerName
+    displayName: Container name for TF
+    type: string
+  - name: airflowTag
+    displayName: version to deploy
+  - name: pgBouncerTag
+    displayName: version to deploy
+    default: 1.18.0-patch.1    
+    type: string
+  - name: envoySidecarHelperTag
+    displayName: Envoy Sidecar Helper image tag
+    default: v0.0.5
+    type: string
+  - name: saPublicAccessUpdate
+    displayName: Storage Account Public Access Update
+    type: boolean
+    default: true
+  - name: keyVaultName
+    displayName: Key vault name
+    type: string    
+  - name: keyVaultSecretNames
+    displayName: Key vault secret names
+    type: object
+  - name: enablersModule
+    displayName: Enablers module name
+    type: string
+  - name: infrastructureModule
+    displayName: Infrastructure module name
+    type: string
+  - name: contentModule
+    displayName: Content module name
+    type: string
+  - name: helmReleaseName
+    displayName: Helm Release Name
+    type: string
+  - name: helmNamespace
+    displayName: Helm Namespace
+    type: string
+  - name: ingressControllerName
+    displayName: Ingress Controller name
+    type: string
+  - name: ingressControllerNamespace
+    displayName: Ingress Controller namespace
+    type: string
+  # - name: verticaNamespace
+  #   displayName: Vertica namespace
+  #   type: string
+  - name: rotateIpOnly
+    displayName: Rotate Ip Only
+    type: boolean
+    default: false
+  - name: databricksPatTokenName
+    displayName: Databricks Pat Token Name
+    type: string
+  - name: airflowViewerGroupName
+    displayName: Airflow viewer group name
+    type: string
+  - name: airflowUserGroupName
+    displayName: Airflow user group name
+    type: string
+  - name: airflowAdminGroupName
+    displayName: Airflow admin group name
+    type: string
+  - name: vnetPeered
+    displayName: Only for controlled enviroment flag
+    type: string
+  - name: mainEnvironmentDeployment
+    displayName: Main enviroment flag - must be false for tenants deployments
+    type: string
+    default: "true"
+  - name: maxParallelDags
+    displayName: The maximum number of active DAG runs / tasks per DAG
+    type: string
+  - name: dagsPausedAtCreation
+    displayName: Flag to pause all DAGs after creation
+    type: string
+    default: "false"
+  - name: maxConcurency
+    displayName: Max number of task instances that should run simultaneously on this airflow installation
+    type: string
+  - name: tenantName
+    displayName: Tenant Airflow name - required only if deploying tenant instance
+    type: string
+    default:
+  - name: ingressPath
+    displayName: Subpath for Airflow URL
+    type: string
+    default:
+
+steps:
+  - ${{ if parameters.saPublicAccessUpdate }}:
+    - template: azcli/sa-update-public-network-access.yml
+      parameters:
+        azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+        resourceGroupName:  ${{ parameters.terraformResourceGroupName }}
+        workingDirectory: $(System.DefaultWorkingDirectory)
+        saName: ${{ parameters.terraformSaName }}
+        publicAccess: Enabled
+        waitAfterUpdate: true
+
+  - template: terraform-outputs.yml
+    parameters:
+      azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+      workingDirectory: $(System.DefaultWorkingDirectory)/terraform/${{ parameters.enablersModule }}
+      terraformVersion: ${{ parameters.terraformVersion }}
+      terraformResourceGroupName: ${{ parameters.terraformResourceGroupName }}
+      terraformSaName: ${{ parameters.terraformSaName }}
+      terraformBackendContainerName: ${{ parameters.terraformBackendContainerName }}
+
+  - template: terraform-outputs.yml
+    parameters:
+      azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+      workingDirectory: $(System.DefaultWorkingDirectory)/terraform/${{ parameters.infrastructureModule }}
+      terraformVersion: ${{ parameters.terraformVersion }}
+      terraformResourceGroupName: ${{ parameters.terraformResourceGroupName }}
+      terraformSaName: ${{ parameters.terraformSaName }}
+      terraformBackendContainerName: ${{ parameters.terraformBackendContainerName }}
+
+  - template: terraform-outputs.yml
+    parameters:
+      azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+      workingDirectory: $(System.DefaultWorkingDirectory)/terraform/${{ parameters.contentModule }}
+      terraformVersion: ${{ parameters.terraformVersion }}
+      terraformResourceGroupName: ${{ parameters.terraformResourceGroupName }}
+      terraformSaName: ${{ parameters.terraformSaName }}
+      terraformBackendContainerName: ${{ parameters.terraformBackendContainerName }}
+
+  - ${{ if parameters.saPublicAccessUpdate }}:  
+    - template: utils/get-agent-ip.yml
+      parameters:
+        workingDirectory: $(System.DefaultWorkingDirectory)
+
+    - template: azcli/aks-get-authorized-ips.yml
+      parameters:
+        aksClusterName: $(terraform_out_aks_cluster_name_main)
+        aksClusterResourceGroup: $(terraform_out_aks_cluster_resource_group_name_main)
+        azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+        workingDirectory: $(System.DefaultWorkingDirectory)
+
+    - template: azcli/aks-update-authorized-ips.yml
+      parameters:
+        aksClusterName: $(terraform_out_aks_cluster_name_main)
+        aksClusterResourceGroup: $(terraform_out_aks_cluster_resource_group_name_main)
+        authorizedIpRanges: $(baseRange),$(agentIp)
+        azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+        waitAfterUpdate: true
+        workingDirectory: $(System.DefaultWorkingDirectory)
+
+  - ${{ if not(parameters.rotateIpOnly) }}:
+    - template: azcli/kv-get-secrets.yml
+      parameters:
+        azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+        keyVaultName: ${{ parameters.keyVaultName }}
+        keyVaultSecretNames: ${{ parameters.keyVaultSecretNames }}
+
+    - template: helm-steps.yml
+      parameters:
+        aksClusterName: $(terraform_out_aks_cluster_name_main)
+        aksClusterResourceGroup: $(terraform_out_aks_cluster_resource_group_name_main)
+        acrName: $(terraform_out_acr_name_main)
+        kubectlVersion: ${{ parameters.kubectlVersion }}
+        helmVersion: ${{ parameters.helmVersion }}
+        osmVersion: ${{ parameters.osmVersion }}
+        helmReleaseName: ${{ parameters.helmReleaseName }}-calico
+        namespace: ${{ parameters.helmNamespace }}
+        helmChartDirectory: $(System.DefaultWorkingDirectory)/helm/airflow-calico
+        azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+        downloadHelmDependencies: false
+        enableOSM: true
+        helmChartValues: |
+          calico.cidrs.postgresql=$(terraform_out_postgresql_cidr)
+          calico.cidrs.endpoints=$(terraform_out_private_endpoints_cidr)
+          calico.cidrs.aks.nodes=$(terraform_out_aks_cluster_nodes_cidr_main)
+          calico.cidrs.aks.pods=$(terraform_out_aks_cluster_pods_cidr_main)
+
+    - ${{ if eq(parameters.infrastructureModule, 'pair_infrastructure') }}:
+      - bash: |
+          echo "##vso[task.setvariable variable=saairflowkey;issecret=true]$(saairflowkeypair)"
+        displayName: 'Set saairflowkey variable'
+
+    - template: helm-steps.yml
+      parameters:
+        aksClusterName: $(terraform_out_aks_cluster_name_main)
+        aksClusterResourceGroup: $(terraform_out_aks_cluster_resource_group_name_main)
+        acrName: $(terraform_out_acr_name_main)
+        kubectlVersion: ${{ parameters.kubectlVersion }}
+        helmVersion: ${{ parameters.helmVersion }}
+        osmVersion: ${{ parameters.osmVersion }}
+        helmReleaseName: ${{ parameters.helmReleaseName }}
+        namespace: ${{ parameters.helmNamespace }}
+        helmChartDirectory: $(System.DefaultWorkingDirectory)/helm/airflow
+        azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+        helmTimeout: 7m0s
+        downloadHelmDependencies: false
+        skipAksLogon: false
+        skipHelmInstall: true
+        skipKubectlInstall: true
+        helmAdditionalArguments: >-
+          --set-literal airflow.airflow.config.AIRFLOW_VAR_DATABRICKS_VIEWER_GROUPS="$(databricks_system_job_viewer_groups)"
+        helmChartValues: |
+          airflow.airflow.config.AIRFLOW__WEBSERVER__BASE_URL=https://airflow.$(terraform_out_private_dns_zone_name_intrum)${{ parameters.ingressPath }}
+          airflow.airflow.config.AIRFLOW_VAR_ENVIRONMENT=$(terraform_in_environment_type)
+          airflow.airflow.config.AIRFLOW_VAR_TENANT="${{ parameters.tenantName }}"
+          airflow.airflow.config.AIRFLOW__WEBSERVER__INSTANCE_NAME=$(terraform_in_environment_type)${{ parameters.tenantName }}
+          airflow.airflow.config.AIRFLOW_VAR_ADLS_STORAGE_NAME=$(terraform_out_sa_name_dl)
+          airflow.airflow.config.AIRFLOW_VAR_TEMP_STORAGE_NAME=$(terraform_out_sa_name_temp)
+          airflow.airflow.config.AIRFLOW_VAR_DATABRICKS_CLUSTER_ID=$(terraform_out_databricks_single_cluster_id)
+          airflow.airflow.config.AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG=${{ parameters.maxParallelDags }}
+          airflow.airflow.config.AIRFLOW__CORE__MAX_ACTIVE_RUNS_PER_DAG=${{ parameters.maxParallelDags }}
+          airflow.airflow.config.AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=${{ parameters.dagsPausedAtCreation }}
+          airflow.airflow.config.AIRFLOW__CORE__PARALLELISM=${{ parameters.maxConcurency }}
+          vnetPeered=${{ parameters.vnetPeered }}
+          mainDeployment=${{ parameters.mainEnvironmentDeployment }}
+          airflow_viewer_group_name=${{ parameters.airflowViewerGroupName }}
+          airflow_user_group_name=${{ parameters.airflowUserGroupName }}
+          airflow_admin_group_name=${{ parameters.airflowAdminGroupName }}
+          airflow_pwd=$(airflowpwd)
+          airflow_dbwconnection_host=$(terraform_out_db_workspace_host)
+          airflow_dbwconnection_token=$(${{ parameters.databricksPatTokenName }})
+          airflow_oauth_spn_client_id="$(airflowoauthspnclientid)"
+          airflow_oauth_spn_client_secret="$(airflowoauthspnclientsecret)"
+          airflow_sa_dl_account=$(terraform_out_sa_name_dl)
+          airflow_sa_mi_client_id=$(terraform_out_aks_kubelet_identity_client_id)
+          airflow_sa_temp_account=$(terraform_out_sa_name_temp)
+          airflow_tenant_id=$(airflowtenantid)
+          airflow.airflow.fernetKey=$(airflowfernetkey)
+          airflow.dags.gitSync.enabled=false
+          airflow.dags.gitSync.repo=""
+          airflow.dags.gitSync.branch=""
+          airflow.dags.gitSync.syncWait=""
+          airflow.dags.gitSync.sshSecret=""
+          airflow.dags.gitSync.sshSecretKey=""
+          airflow.dags.gitSync.subPath=""
+          airflow.externalDatabase.host=$(terraform_out_psql_server_host)
+          airflow.externalDatabase.database=airflow${{ parameters.tenantName }}
+          airflow.externalDatabase.user=$(psqlairflowuser)
+          airflow.externalDatabase.password=$(psqlairflowpwd)
+          airflow.airflow.image.repository="$(terraform_out_acr_name_main).azurecr.io/images/airflow"
+          airflow.airflow.image.tag=${{ parameters.airflowTag }}
+          airflow.envoyHelper.image.repository="$(terraform_out_acr_name_main).azurecr.io/images/envoy-sidecar-helper"
+          airflow.envoyHelper.image.tag=${{ parameters.envoySidecarHelperTag }}
+          airflow.pgbouncer.image.repository="$(terraform_out_acr_name_main).azurecr.io/images/pgbouncer"
+          airflow.pgbouncer.image.tag=${{ parameters.pgBouncerTag }}
+          airflow.ingress.web.host=airflow.$(terraform_out_private_dns_zone_name_intrum)
+          airflow.ingress.web.path="${{ parameters.ingressPath }}"
+          airflow.ingress.web.annotations."nginx\.ingress\.kubernetes\.io\/configuration\-snippet"="proxy_ssl_name \"airflow.${{ parameters.helmNamespace }}.cluster.local\";"
+          airflow_sa_name=$(terraform_out_sa_name_airflow)
+          airflow_sa_key="$(saairflowkey)"
+          airflow_sa_rg_name=$(terraform_out_aks_cluster_resource_group_name_main)
+          airflow_sa_container_name=dags${{ parameters.tenantName }}
+          airflow_sa_container_name_logs=logs${{ parameters.tenantName }}
+          ingressController.name=${{ parameters.ingressControllerName }}
+          ingressController.namespace=${{ parameters.ingressControllerNamespace }}
+          airflow_tls_crt=$(clienttlscrt)
+          airflow_tls_key=$(clienttlskey)
+          osm.hosts.tls.kubernetes=$(terraform_out_aks_cluster_fqdn_main)
+          osm.hosts.tls.databricks=$(terraform_out_db_workspace_host)
+          osm.hosts.tls.sa_airflow_blob=$(terraform_out_sa_name_airflow).$(terraform_out_private_dns_zone_name_blob)
+          osm.hosts.tls.sa_dl_blob=$(terraform_out_sa_name_dl).$(terraform_out_private_dns_zone_name_blob)
+          osm.hosts.tls.sa_temp_blob=$(terraform_out_sa_name_temp).$(terraform_out_private_dns_zone_name_blob)
+          osm.hosts.tls.sa_airflow_blob_public=$(terraform_out_sa_name_airflow).blob.core.windows.net
+          osm.hosts.tls.sa_dl_blob_public=$(terraform_out_sa_name_dl).blob.core.windows.net
+          osm.hosts.tls.sa_temp_blob_public=$(terraform_out_sa_name_temp).blob.core.windows.net
+          osm.hosts.tls.sa_dl_dfs=$(terraform_out_sa_name_dl).$(terraform_out_private_dns_zone_name_dfs)
+          osm.hosts.tls.sa_temp_dfs=$(terraform_out_sa_name_temp).$(terraform_out_private_dns_zone_name_dfs)
+          osm.hosts.tls.sa_dl_dfs_public=$(terraform_out_sa_name_dl).dfs.core.windows.net
+          osm.hosts.tls.sa_temp_dfs_public=$(terraform_out_sa_name_temp).dfs.core.windows.net
+          osm.hosts.tls.sa_dl_file=$(terraform_out_sa_name_dl).$(terraform_out_private_dns_zone_name_file)
+          osm.hosts.tls.sa_dl_file_public=$(terraform_out_sa_name_dl).file.core.windows.net
+          calico.cidrs.postgresql=$(terraform_out_postgresql_cidr)
+          calico.cidrs.endpoints=$(terraform_out_private_endpoints_cidr)
+          calico.cidrs.aks.nodes=$(terraform_out_aks_cluster_nodes_cidr_main)
+          calico.cidrs.aks.pods=$(terraform_out_aks_cluster_pods_cidr_main)
+
+    - template: utils/timeout.yml
+      parameters:
+        secondsToWait: "60" # Waiting for Service creation and external IP assignment
+        workingDirectory: $(System.DefaultWorkingDirectory)
+
+  - template: azcli/aks-get-credentials.yml
+    parameters:
+      aksClusterName: $(terraform_out_aks_cluster_name_main)
+      aksClusterResourceGroup: $(terraform_out_resource_group_name)
+      azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+      workingDirectory: $(System.DefaultWorkingDirectory)                  
+
+  - template: kubectl/get-service-ips.yml
+    parameters:
+      serviceName: "${{ parameters.ingressControllerName }}-controller"
+      namespace: "${{ parameters.ingressControllerNamespace}}"
+      workingDirectory: $(System.DefaultWorkingDirectory)
+
+  - template: rotate-a-dns-records-steps.yml
+    parameters:
+      azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+      aksResourceGroupName: ${{ parameters.resourceGroupName }}
+      dnsZoneSubscriptionID: ${{ parameters.dnsZoneSubscriptionID }}
+      dnsZoneResourceGroupName: ${{ parameters.dnsZoneResourceGroupName }}
+      kubectlVersion: ${{ parameters.kubectlVersion }}
+      condition: and(not(failed()), not(canceled()))
+      privateDns:
+        - substring: internal_service
+          name: $(terraform_out_private_dns_zone_name_intrum)
+      aDnsRecords:
+        - name: airflow
+          fromPrivateEndpoint: false
+          targetResourceSubstring: airflow
+          ttl_seconds: 3600
+          aksPreRotation: false
+          aksPostRotation: false
+          dnsSubstrings:
+            - subresource: internal_service
+              ipAddress: $(serviceExternalIp)
+
+  - ${{ if parameters.saPublicAccessUpdate }}:
+    - template: azcli/aks-update-authorized-ips.yml
+      parameters:
+        aksClusterName: $(terraform_out_aks_cluster_name_main)
+        aksClusterResourceGroup: $(terraform_out_aks_cluster_resource_group_name_main)
+        authorizedIpRanges: $(baseRange)
+        waitAfterUpdate: false
+        azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+        workingDirectory: $(System.DefaultWorkingDirectory)
+        condition: and(always(), eq(variables.updatedAksApi, 'true'))
+
+  - template: azcli/sa-update-public-network-access.yml
+    parameters:
+      azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+      resourceGroupName:  ${{ parameters.terraformResourceGroupName }}
+      workingDirectory: $(System.DefaultWorkingDirectory)
+      saName: ${{ parameters.terraformSaName }}
+      publicAccess: Disabled
+      waitAfterUpdate: false
+      condition: and(always(), eq(variables.updatedSaAccess, 'true'))

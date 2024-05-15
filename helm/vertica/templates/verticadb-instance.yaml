@@ -1,0 +1,95 @@
+apiVersion: vertica.com/v1beta1
+kind: VerticaDB
+metadata:
+  name: {{ .Release.Name }}-{{ .Release.Namespace }}
+spec:
+  image: {{ .Values.vertica.image.repo }}/{{ .Values.vertica.image.name }}:{{ .Values.vertica.image.tag }}
+  imagePullPolicy: {{ .Values.vertica.image.pullPolicy }}
+  {{- if .Values.vertica.imagePullSecrets }}
+  imagePullSecrets: {{ .Values.vertica.imagePullSecrets }}
+  {{- end }}
+  initPolicy: {{ .Values.vertica.initPolicy }}
+  dbName: {{ .Values.vertica.dbName }}
+  superuserPasswordSecret: {{ .Release.Name }}-su-passwd
+  encryptSpreadComm: vertica
+  {{- if .Values.vertica.licenseFile }}
+  licenseSecret: {{ .Release.Name }}-license
+  {{- end }}
+  {{- with .Values.vertica.securityContext }}
+  securityContext:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- if .Values.vertica.sidecars }}
+  sidecars:
+    {{- range $key, $value := .Values.vertica.sidecars }}
+    - name: {{ $key }}
+      image: {{ $value.image.repo }}/{{ $value.image.name }}:{{ $value.image.tag }}
+      {{- with $value.volumeMounts }}
+      volumeMounts:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $value.resources }}
+      resources:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- end }}  
+  {{- end }}
+  {{- with .Values.vertica.volumes }}
+  volumes:
+  {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.vertica.volumeMounts }}
+  volumeMounts:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  local:
+    requestSize: {{ .Values.vertica.local.requestSize }}
+    depotVolume: {{ .Values.vertica.local.depotVolume }}
+    depotPath: {{ .Values.vertica.local.depotPath }}
+    dataPath: {{ .Values.vertica.local.dataPath }}
+    {{- if .Values.vertica.local.storageClass }}
+    storageClass: {{ .Values.vertica.local.storageClass }}
+    {{- end }}
+  communal:
+    endpoint: {{ required "vertica.storageAccount.endpoint value is required" .Values.vertica.storageAccount.endpoint }}/{{ required "vertica.storageAccount.containerName value is required" .Values.vertica.storageAccount.containerName }}
+    path: azb://{{ required "vertica.storageAccount.name value is required" .Values.vertica.storageAccount.name }}/{{ required "vertica.storageAccount.containerName value is required" .Values.vertica.storageAccount.containerName }}
+  shardCount: {{ .Values.vertica.shardCount }}
+  subclusters:
+    {{- range $key, $value := .Values.vertica.subclusters }}
+    - name: {{ $key }}
+      isPrimary: {{ $value.isPrimary }}
+      size: {{ $value.size }}
+      serviceName: {{ $value.service.name }}
+      serviceType: {{ $value.service.type }}
+      {{- if $value.resources }}
+      resources:
+        {{- if $value.resources.limits }}
+        limits:
+          cpu: {{ $value.resources.limits.cpu | quote }}
+          memory: {{ $value.resources.limits.memory | quote }}
+        {{- end }}
+        {{- if $value.resources.requests }}
+        requests:
+          cpu: {{ $value.resources.requests.cpu | quote }}
+          memory: {{ $value.resources.requests.memory | quote }}
+        {{- end }}
+      {{- end }}
+      {{- with $value.affinity }}
+      affinity:
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
+      {{- with $value.nodeSelector }}
+      nodeSelector:
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
+      {{- with $value.tolerations }}
+      tolerations:
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
+      {{- if $value.service.annotations }}
+      serviceAnnotations: 
+      {{- range $key, $value := $value.service.annotations }}
+        {{ $key }}: {{ $value | quote }}
+      {{- end }}
+      {{- end }}
+    {{- end }}

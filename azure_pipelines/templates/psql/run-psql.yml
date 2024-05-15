@@ -1,0 +1,35 @@
+parameters:
+  - name: runUserPassword
+    displayName: Password to run with
+    type: string
+  - name: runUsername
+    displayName: User to run with
+    type: string
+  - name: host
+    displayName: host
+    type: string       
+  - name: cmd
+    displayName: Query to run
+    type: string    
+  - name: dbName
+    displayName: db name
+    type: string         
+  - name: workingDirectory
+    displayName: Azure CLI working directory
+    type: string
+  - name: ignoreError
+    displayName: ignore error
+    type: boolean    
+
+steps:
+  - task: Bash@3
+    displayName: running psql commands
+    inputs:
+      targetType: 'inline'
+      ${{ if parameters['ignoreError'] }}:
+        script: |
+          PGPASSWORD=${{ parameters.runUserPassword }} psql -U ${{ parameters.runUsername }} -h ${{ parameters.host }} -d ${{ parameters.dbName }} -c "${{ parameters.cmd }}" || true
+      ${{ else }}:    
+        script: |
+          PGPASSWORD=${{ parameters.runUserPassword }} psql -U ${{ parameters.runUsername }} -h ${{ parameters.host }} -d ${{ parameters.dbName }} -c "${{ parameters.cmd }}"
+      workingDirectory: ${{ parameters.workingDirectory }}

@@ -1,0 +1,41 @@
+trigger:
+  - none
+  # - dev
+
+resources:
+  repositories:
+  - repository: devops
+    type: git
+    name: igtpoc/devops
+    ref: main
+
+parameters:
+  - name: env
+    displayName: Environment to run
+    type: string
+    default: demo
+    values:
+    - demo
+    - uat
+    - sit
+  - name: CreateArtifact
+    displayName: Create wheel package as an Artifact
+    type: boolean
+    default: true
+  - name: PublishArtifact
+    displayName: Publish wheel package as an Azure Artifact
+    type: boolean
+    default: false
+  - name: InstallDatabricksLib
+    displayName: Install library in Databricks cluster
+    type: boolean
+    default: false
+
+extends:
+  template: azure_pipelines/igtpoc-databricks-pipeline.yml@devops
+  parameters:
+    CreateArtifact: ${{ parameters.CreateArtifact }}
+    PublishArtifact: ${{ parameters.PublishArtifact }}
+    InstallDatabricksLib: ${{ parameters.InstallDatabricksLib }}
+    ${{ if eq(parameters['env'], 'demo') }}:
+      template: config/dev/igtpoc-vars.yml@devops

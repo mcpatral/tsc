@@ -1,0 +1,64 @@
+parameters:
+  - name: acrName
+    displayName: ACR name
+    type: string
+  - name: acrResourceGroupName
+    displayName: ACR resource group name
+    type: string
+  - name: acrSubscriptionId
+    displayName: ACR subscription ID
+    type: string
+    default: ""
+  - name: acrIpRange
+    displayName: IPv4 address or CIDR range.
+    type: string
+  - name: action
+    displayName: Action for az acr network-rule
+    type: string
+    values:
+      - add
+      - remove
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+  - name: waitAfterUpdate
+    displayName: Azure CLI working directory
+    type: boolean
+    default: false
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+  - name: workingDirectory
+    displayName: Azure CLI working directory
+    type: string
+
+steps:
+  - task: AzureCLI@2
+    displayName: Update ACR network rules
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        subscriptionId="${{ parameters.acrSubscriptionId }}"
+        if [[ "$subscriptionId" == "" ]]; then
+          subscriptionId=$(az account show --query "id" --output tsv)
+        fi
+
+        az acr network-rule ${{ parameters.action }} --name ${{ parameters.acrName }} --resource-group ${{ parameters.acrResourceGroupName }} --subscription $subscriptionId --ip-address ${{ parameters.acrIpRange }} --query 'networkRuleSet.ipRules[].ipAddressOrRange'
+        if [[ $? -ne 0 ]]; then
+          echo "##vso[task.logissue type=error;]error updating ACR network rules"
+          exit 1
+        fi
+        echo "##vso[task.setvariable variable=updatedAcrAccess]true"
+      workingDirectory: ${{ parameters.workingDirectory }}
+
+  - ${{ if parameters.waitAfterUpdate }}:
+    - template: ../utils/timeout.yml
+      parameters:
+        secondsToWait: "30" # Waiting for rules to be applied
+        workingDirectory: $(System.DefaultWorkingDirectory)
+        condition: ${{ parameters.condition }}

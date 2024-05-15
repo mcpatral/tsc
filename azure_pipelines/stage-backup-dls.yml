@@ -1,0 +1,68 @@
+parameters:
+  - name: triggerPeriod
+    type: string
+  - name: environment
+    type: string
+  - name: env
+    type: string
+  - name: destBackupStorage
+    type: string
+    default: 'sabackupsdademo'
+  - name: serviceConnectionName
+    type: string
+    default: 'sc_datamngtdev_poc'
+
+stages:
+
+- stage: Backup
+  displayName: 'Backup'
+  variables:
+  - group: ServicePrincipal
+
+  jobs:
+  # Backup Azure Data Lake Storage data
+  - template: templates/job-backup-dls.yml
+    parameters:
+      backups:
+        - id: 0
+          sourceStorageAccount: 'dlsda${{ parameters.env }}01'
+          targetStorageAccount: ${{ parameters.destBackupStorage }}
+          sourceFolder: 'artifacts'
+          targetFolder: ''
+          triggerPeriod: ${{ parameters.triggerPeriod }}
+          azCopyConcurrency: 500
+          clientID: $(client_id)
+          clientSecret: $(client_secret)
+          tenantID: $(tenant_id)
+        - id: 1
+          sourceStorageAccount: 'dlsda${{ parameters.env }}01'
+          targetStorageAccount: ${{ parameters.destBackupStorage }}
+          sourceFolder: 'landing'
+          targetFolder: ''
+          triggerPeriod: ${{ parameters.triggerPeriod }}
+          azCopyConcurrency: 500
+          clientID: $(client_id)
+          clientSecret: $(client_secret)
+          tenantID: $(tenant_id)
+        - id: 2
+          sourceStorageAccount: 'dlsda${{ parameters.env }}01'
+          targetStorageAccount: ${{ parameters.destBackupStorage }}
+          sourceFolder: 'bronze'
+          targetFolder: ''
+          triggerPeriod: ${{ parameters.triggerPeriod }}
+          azCopyConcurrency: 500
+          clientID: $(client_id)
+          clientSecret: $(client_secret)
+          tenantID: $(tenant_id)
+        - id: 3
+          sourceStorageAccount: 'dlsda${{ parameters.env }}01'
+          targetStorageAccount: ${{ parameters.destBackupStorage }}
+          sourceFolder: 'silver'
+          targetFolder: ''
+          triggerPeriod: ${{ parameters.triggerPeriod }}
+          azCopyConcurrency: 500
+          clientID: $(client_id)
+          clientSecret: $(client_secret)
+          tenantID: $(tenant_id)
+      environment: ${{ parameters.environment }}
+      serviceConnectionName: ${{ parameters.serviceConnectionName }}

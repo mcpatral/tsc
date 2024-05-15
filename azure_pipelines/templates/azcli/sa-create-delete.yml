@@ -1,0 +1,68 @@
+parameters:
+  - name: saName
+    displayName: Storage account for backend
+    type: string
+  - name:  resourceGroupName
+    displayName: Resource group name
+    type: string
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+  - name: workingDirectory
+    displayName: Azure CLI working directory
+    type: string
+  - name: location
+    displayName: Location of resources backend 
+    type: string
+  - name: action
+    displayName: Action to do with storage account
+    default: create
+    values: 
+      - create 
+      - delete
+  - name: networkAccess
+    displayName: public network access
+    default: Disabled
+    values:
+      - Enabled
+      - Disabled
+  - name: sku
+    displayName: Storage account SKU
+    default: Standard_GRS
+    values:
+      - Premium_LRS
+      - Premium_ZRS
+      - Standard_GRS
+      - Standard_GZRS
+      - Standard_LRS
+      - Standard_RAGRS
+      - Standard_RAGZRS
+      - Standard_ZRS
+  - name:  allowSharedKeyAccess
+    displayName: Allow shared key access
+    type: boolean
+
+steps:
+  - task: AzureCLI@2
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    displayName: ${{ parameters.action }} storage account
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        if [ "${{ parameters.action }}" == "create" ]; then
+          az storage account ${{ parameters.action }} --location ${{ parameters.location }} --resource-group ${{ parameters.resourceGroupName }} \
+          --name ${{ parameters.saName }} --public-network-access ${{ parameters.networkAccess }} --allow-shared-key-access ${{ parameters.allowSharedKeyAccess }} --sku ${{ parameters.sku }} --query "provisioningState" \
+          --min-tls-version TLS1_2
+        fi
+        if [ "${{ parameters.action }}" == "delete" ]; then
+          az storage account ${{ parameters.action }} --name ${{ parameters.saName }} --resource-group ${{ parameters.resourceGroupName }} --yes
+        fi
+      workingDirectory: ${{ parameters.workingDirectory }}
+            

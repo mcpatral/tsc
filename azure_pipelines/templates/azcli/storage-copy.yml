@@ -1,0 +1,52 @@
+parameters:
+- name: azureServiceConnectionName
+  displayName: Azure Service Connection Name
+  type: string
+- name: sourceStorageAccountName
+  displayName: Source Storage Account Name
+  type: string
+- name: sourceContainerName
+  displayName: Source Container Name
+  type: string
+- name: sourceFileAddress
+  displayName: Source File Address
+  type: string
+  default: ""
+- name: targetStorageAccountName
+  displayName: Target Storage Account Name
+  type: string
+- name: targetContainerName
+  displayName: Target Container Name
+  type: string
+- name: targetFileAddress
+  displayName: Target File Address
+  type: string
+  default: ""
+- name: extraParameters
+  displayName: Extra parameters for azcopy copy
+  type: string
+  default: ""
+- name: condition
+  displayName: Run conditions for task
+  type: string
+  default: ""
+- name: workingDirectory
+  displayName: Azure CLI working directory
+  type: string
+
+steps:
+- task: AzureCLI@2
+  displayName: Storage copy from ${{ parameters.sourceStorageAccountName }} to ${{ parameters.targetStorageAccountName }}
+  ${{ if ne(parameters.condition, '') }}:
+    condition: ${{ parameters.condition }}
+  inputs:
+    azureSubscription: ${{ parameters.azureServiceConnectionName }}
+    scriptType: 'bash'
+    scriptLocation: 'inlineScript'
+    inlineScript: |
+      az storage copy --source https://${{ parameters.sourceStorageAccountName }}.blob.core.windows.net/${{ parameters.sourceContainerName }}/${{ parameters.sourceFileAddress }} --destination https://${{ parameters.targetStorageAccountName }}.blob.core.windows.net/${{ parameters.targetContainerName }}/${{ parameters.targetFileAddress }} ${{ parameters.extraParameters }}
+      if [[ $? -ne 0 ]]; then
+        echo "##vso[task.logissue type=error;]error copying blobs from ${{ parameters.sourceStorageAccountName }}/${{ parameters.sourceContainerName }}/${{ parameters.sourceFileAddress }} to ${{ parameters.targetStorageAccountName }}/${{ parameters.targetContainerName }}/${{ parameters.targetFileAddress }}"
+        exit 1
+      fi
+    workingDirectory: ${{ parameters.workingDirectory }}

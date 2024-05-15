@@ -1,0 +1,143 @@
+# TODO include pair infrastructure in variables as in other pipelines.
+parameters:
+  - name: primaryEnvironmentName
+    type: string
+  - name: branchName
+    type: string
+  - name: createArtifact
+    type: boolean
+  - name: publishArtifact
+    type: boolean
+  - name: uploadDatabricksNotebooks
+    type: boolean
+  - name: forcedReleaseType
+    type: string
+  - name: enviromentList
+    type: object
+    default: []
+
+variables:
+  - group: ${{ parameters.primaryEnvironmentName }}
+  - name: artifactsDirectory
+    value: 'artifacts'
+  - name: devArtifactBuildCommand
+    value: 'python3 setup.py bdist_wheel'
+  - name: packageSuffix
+    value: 'py3-none-any'
+  - name: packageType
+    value: 'whl'
+  - name: pyBuildRequirementsPath
+    value: 'devops/python/requirements_build.txt'
+  - name: notebookLanguage
+    value: 'PYTHON'
+  - name: notebookFolder
+    value: 'notebooks'
+  - name: notebookLocalPath
+    value: './${{ variables.notebookFolder }}/*'
+  - name: databricksRemotePath
+    value: '/Shared/'
+  - name: commitTag
+    value: true
+  - name: releaseTypeParameters
+    ${{ if ne(parameters['forcedReleaseType'], 'automatic') }}:
+      value: "--${{ parameters.forcedReleaseType }}"
+  - name: azureDevOpsPool
+    ${{ if eq(parameters.primaryEnvironmentName, 'demo') }}:
+      value: ubuntu-latest
+    ${{ else }}:
+      value: "${{ parameters.primaryEnvironmentName }}-agentpool"
+
+stages:
+  - stage: Build
+    condition: |
+      and(
+        ${{ parameters.createArtifact }},
+        ne(variables['Build.Reason'], 'PullRequest')
+      )
+    pool: 
+      ${{ if eq(variables['azureDevOpsPool'], 'ubuntu-latest') }}:
+        vmImage: ${{ variables.azureDevOpsPool }}
+      ${{ else }}:
+        name: ${{ variables.azureDevOpsPool }}
+    jobs:
+    - job: BuildArtifact
+      workspace:
+        clean: all    
+      steps:
+      - template: azure_pipelines/templates/build-python-artifact-release.yml@devops
+        parameters:
+          branchName: ${{ parameters.branchName }}
+          pyBuildRequirementsPath: ${{ variables.pyBuildRequirementsPath }}
+          releaseAdditionalParameters: ${{ variables.releaseTypeParameters }} -D tag_commit=${{ variables.commitTag }} -D branch=${{ parameters.branchName }}
+          buildCommand: ${{ variables.devArtifactBuildCommand }}
+          packageSuffix: ${{ variables.packageSuffix }}
+          packageType: ${{ variables.packageType }}
+          artifactsDirectory: ${{ variables.artifactsDirectory }}
+          workingDirectory: $(Build.SourcesDirectory)
+      displayName: 'Build artifact'
+
+  - stage: PublishFeed
+    dependsOn: Build
+    condition: and(succeeded('Build'), eq('${{ parameters.publishArtifact }}', 'true'))
+    pool: 
+      ${{ if eq(variables['azureDevOpsPool'], 'ubuntu-latest') }}:
+        vmImage: ${{ variables.azureDevOpsPool }}
+      ${{ else }}:
+        name: ${{ variables.azureDevOpsPool }}
+    jobs:
+    - job:
+      steps:
+      - template: azure_pipelines/templates/publish-feed-whl.yml@devops
+        parameters:
+          feedServiceConnectionName: $(common_feed_service_principal_name)
+          projectName: $(project_name)
+          feedName: $(common_feed_name)
+          artifactsDirectory: '${{ variables.artifactsDirectory }}'
+          packageType: '${{ variables.packageType }}'
+      displayName: 'Publish artifact to azure feed'
+
+  - ${{ each environmentName in parameters.enviromentList }}:
+    - stage: Uploading_notebooks_databricks_${{ environmentName.key }}
+      dependsOn: PublishFeed
+      condition: and(succeeded('Build'), eq('${{ parameters.uploadDatabricksNotebooks }}', 'true'))
+      variables:
+        - group: ${{ environmentName.key }}
+        - name: databricksResourceGroup
+          ${{ if eq(environmentName.key, 'demo') }}:
+            value: $(databricks_resource_group)
+          ${{ else }}:
+            value: "rg-$(terraform_in_environment_type)-$(terraform_in_project)-$(terraform_in_location_short)"
+        - name: databricksWorkspace
+          ${{ if eq(environmentName.key, 'demo') }}:
+            value: $(databricks_workspace)
+          ${{ else }}:
+            value: "dbw-$(terraform_in_environment_type)-$(terraform_in_project)-$(terraform_in_location_short)"
+        - name: azureDevOpsPool
+          ${{ if eq(environmentName.key, 'demo') }}:
+            value: ubuntu-latest
+          ${{ else }}:
+            value: "${{ environmentName.key }}-agentpool"
+      pool: 
+        ${{ if eq(variables['azureDevOpsPool'], 'ubuntu-latest') }}:
+          vmImage: ${{ variables.azureDevOpsPool }}
+        ${{ else }}:
+          name: ${{ variables.azureDevOpsPool }}
+      jobs:
+      - job: Uploading_notebooks_databricks
+        steps:
+          - template: azure_pipelines/templates/databricks/databricks-installation-and-login.yml
+            parameters:
+              azureServiceConnectionName: ${{ environmentName.value }}
+              resourceGroupName: ${{ variables.databricksResourceGroup }}
+              databricksWorkspaceName: ${{ variables.databricksWorkspace }}
+          - template: azure_pipelines/templates/databricks/databricks-prepare-notebooks.yml
+            parameters:
+              notebookFolder: ${{ variables.notebookFolder }}
+              workingDirectory: $(Build.SourcesDirectory)
+          - template: azure_pipelines/templates/databricks/databricks-notebooks-upload.yml
+            parameters:
+              notebookLanguage: ${{ variables.notebookLanguage }}
+              notebookLocalPath: ${{ variables.notebookLocalPath }}
+              databricksRemotePath: ${{ variables.databricksRemotePath }}
+      displayName: 'Uploading notebooks to Databricks'
+

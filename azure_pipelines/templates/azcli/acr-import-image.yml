@@ -1,0 +1,40 @@
+parameters:
+  - name: azureServiceConnectionName
+    displayName: Target ACR Azure Service Connection name
+    type: string
+  - name: sourceAcrName
+    displayName: Source Azure Container registry name
+    type: string
+  - name: sourceAcrSubscriptionId
+    displayName: Source ACR Azure subscription ID
+    type: string
+  - name: sourceAcrResourceGroup
+    displayName: Source ACR Azure resource group name
+    type: string
+  - name: targetAcrName
+    displayName: Target Azure Container registry name
+    type: string
+  - name: imageNames
+    displayName: Docker image names with tags
+    type: object
+  - name: additionalParameters
+    displayName: Additional flags for command
+    type: string
+    default: ""
+  - name: workingDirectory
+    displayName: Azure CLI working directory
+    type: string
+
+steps:
+  - ${{ each imageName in parameters.imageNames }}:
+    - task: AzureCLI@2
+      displayName: Import image ${{ imageName }}
+      inputs:
+        azureSubscription: ${{ parameters.azureServiceConnectionName }}
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          az acr import -n ${{ parameters.targetAcrName }} --source ${{ imageName }} \
+            --registry /subscriptions/${{ parameters.sourceAcrSubscriptionId }}/resourceGroups/${{ parameters.sourceAcrResourceGroup }}/providers/Microsoft.ContainerRegistry/registries/${{ parameters.sourceAcrName }} \
+            ${{ parameters.additionalParameters }} --force
+        workingDirectory: ${{ parameters.workingDirectory }}

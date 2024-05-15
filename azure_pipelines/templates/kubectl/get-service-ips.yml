@@ -1,0 +1,29 @@
+parameters:
+  - name: serviceName
+    displayName: Service object name
+    type: string
+  - name: namespace
+    displayName: Namespace to install templates
+    type: string
+  - name: workingDirectory
+    displayName: Azure CLI working directory
+    type: string
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+
+steps:
+  - task: Bash@3
+    displayName: Getting IPs of service
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    inputs:
+      targetType: 'inline'
+      script: |
+        clusterIp=$(kubectl get svc/${{ parameters.serviceName }} -n ${{ parameters.namespace }} -o json | jq -r '.spec.clusterIP')
+        externalIp=$(kubectl get svc/${{ parameters.serviceName }} -n ${{ parameters.namespace }} -o json | jq -r '.status.loadBalancer.ingress[0].ip')
+
+        echo "##vso[task.setvariable variable=serviceClusterIp]$clusterIp"
+        echo "##vso[task.setvariable variable=serviceExternalIp]$externalIp"
+      workingDirectory: ${{ parameters.workingDirectory }}

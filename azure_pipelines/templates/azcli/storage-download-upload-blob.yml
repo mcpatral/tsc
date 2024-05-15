@@ -1,0 +1,40 @@
+parameters:
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+  - name: action
+    displayName: Action to do with file/blob
+    default: download
+    values:
+      - download
+      - upload
+  - name: saName
+    displayName: Storage Account name
+    type: string
+  - name: saContainerName
+    displayName: Storage account container name
+    type: string
+  - name: blobName
+    displayName: Blob name to download
+    type: string
+  - name: fileName
+    displayName: File name to upload to blob/download from blob
+    type: string
+  - name: workingDirectory
+    displayName: Azure CLI working directory
+    type: string
+
+steps:
+  - task: AzureCLI@2
+    displayName: File ${{ parameters.action }} to/from ${{ parameters.blobName }} blob
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        az storage blob ${{ parameters.action }} -f ${{ parameters.fileName }} -n ${{ parameters.blobName }} -c ${{ parameters.saContainerName }} \
+          --account-name ${{ parameters.saName }} --overwrite true --auth-mode login

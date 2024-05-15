@@ -1,0 +1,90 @@
+trigger: none
+
+parameters:
+  - name: environmentName
+    displayName: Variable group name for environment to deploy
+    type: string
+  - name: createTestKv
+    displayName: Create Test KV in subscription
+    type: boolean
+    default: false
+  
+variables:
+  - group: ${{ parameters.environmentName }}
+  - name: createTestKv
+    ${{ if parameters.createTestKv }}:
+      value: -CreateTestKv
+    ${{ else }}:
+      value: ""
+  
+stages:
+  - stage: register_providers
+    displayName: Register providers
+    pool: 
+      vmImage: ubuntu-latest
+    jobs:
+      - job: register_providers
+        displayName: Register providers
+        steps:
+          - checkout: self
+
+          - template: azure_pipelines/templates/azcli/az-run-script.yml
+            parameters:
+              scriptPath: $(System.DefaultWorkingDirectory)/subscription/providers-registration.ps1
+              scriptType: pscore
+              errorActionPreference: continue
+              failOnStandardError: false
+              azureServiceConnectionName: $(azure_service_principal_name)
+              workingDirectory: $(System.DefaultWorkingDirectory)/subscription/
+
+  - stage: rbac_configuration
+    displayName: Configure RBAC for subscription
+    dependsOn:
+      - register_providers
+    pool: 
+      vmImage: ubuntu-latest
+    jobs:
+      - job: rbac_configuration
+        displayName: Configure subscription RBAC
+        steps:
+          - checkout: self
+
+          - template: azure_pipelines/templates/azcli/az-run-script.yml
+            parameters:
+              scriptPath: $(System.DefaultWorkingDirectory)/subscription/rbac-configuration.ps1
+              scriptArguments: >-
+                -SubscriptionType $(terraform_in_subscription_type)
+                -DevopsGroupObjectId $(terraform_in_devops_group_id)
+                -DeveloperGroupObjectId $(terraform_in_developer_group_id)
+                -QaGroupObjectId $(terraform_in_qa_group_id)
+                -DataScientistGroupObjectId $(terraform_in_datascientist_group_id)
+                -SASupportGroupObjectId $(terraform_in_sasupport_group_id)
+                -OwnerGroupObjectId $(terraform_in_owner_group_id)
+              scriptType: pscore
+              errorActionPreference: stop
+              azureServiceConnectionName: $(azure_service_principal_name)
+              workingDirectory: $(System.DefaultWorkingDirectory)/subscription/
+
+  - stage: create_env_resources
+    displayName: Create initial resources for environment
+    dependsOn:
+      - rbac_configuration
+    pool: 
+      vmImage: ubuntu-latest
+    jobs:
+      - job: create_env_resources
+        displayName: Create initial resources for environment
+        steps:
+          - checkout: self
+
+          - template: azure_pipelines/templates/azcli/az-run-script.yml
+            parameters:
+              scriptPath: $(System.DefaultWorkingDirectory)/subscription/resources-initialization.ps1
+              scriptArguments: >-
+                -EnvironmentName $(terraform_in_environment_type)
+                -Region $(terraform_in_location)
+                -RegionShort $(terraform_in_location_short) ${{ variables.createTestKv }}
+              scriptType: pscore
+              errorActionPreference: stop
+              azureServiceConnectionName: $(azure_service_principal_name)
+              workingDirectory: $(System.DefaultWorkingDirectory)/subscription/

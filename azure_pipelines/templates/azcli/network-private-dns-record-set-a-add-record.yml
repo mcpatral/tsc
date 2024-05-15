@@ -1,0 +1,51 @@
+parameters:
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+  - name: workingDirectory
+    displayName: Azure CLI working directory
+    type: string
+  - name: dnsZoneSubscriptionID
+    displayName: Subscription ID of the Private DNS zone
+    type: string
+  - name: dnsZoneResourceGroupName
+    displayName: Dns Zone Resource Group Name
+    type: string
+  - name: dnsZoneName
+    displayName: Dns Zone Name
+    type: string
+  - name: recordSetName
+    displayName: Name of the record set, relative to the name of the zone.
+    type: string
+  - name: ipAddressToAdd
+    displayName: Ip address to add to the DNS record
+    type: string
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+  - name: stepNameSuffix
+    displayName: Step name suffix
+    type: string
+    default: ''
+
+steps:
+  - task: AzureCLI@2
+    name: add_ip_for_a_record_for_${{ parameters.stepNameSuffix }}
+    displayName: Add IP address for the A record ${{ parameters.stepNameSuffix }}
+    timeoutInMinutes: 3
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        echo "Adding the A DNS record ${{ parameters.recordSetName }} to ${{ parameters.dnsZoneName }} and ${{ parameters.dnsZoneResourceGroupName }} with the ip address ${{ parameters.ipAddressToAdd }}"
+        az network private-dns record-set a add-record --subscription ${{ parameters.dnsZoneSubscriptionID }} -g ${{ parameters.dnsZoneResourceGroupName }} -z ${{ parameters.dnsZoneName }} -n ${{ parameters.recordSetName }} -a ${{ parameters.ipAddressToAdd }}
+        echo "##vso[task.logissue type=warning;]the record ${{ parameters.recordSetName }} for the ip ${{ parameters.ipAddressToAdd }} has been added."
+        if [[ $? -ne 0 ]]; then
+          echo "##vso[task.logissue type=error;]the record ${{ parameters.recordSetName }} for the ip ${{ parameters.ipAddressToAdd }} cannot be added."
+          exit 1
+        fi
+      workingDirectory: ${{ parameters.workingDirectory }}

@@ -1,0 +1,120 @@
+parameters:
+- name: azureServiceConnectionName
+  type: string
+- name: terraformVersion
+  type: string
+- name: terraformResourceGroupName
+  displayName: Resource group for TF
+  type: string
+- name: terraformSaName
+  displayName: Storage Account name for TF
+  type: string
+- name: terraformBackendContainerName
+  displayName: Container name for TF
+  type: string
+- name: pool
+  displayName: Agent pool name to run jobs
+  type: string
+- name: saPublicAccessUpdate
+  displayName: SA Public Access Update
+  type: boolean
+- name: geoRecoverTo
+  displayName: Recover to main or pair
+  type: string
+- name: mainResourceGroupName
+  displayName: Main resource group name
+  type: string
+- name: location
+  displayName: Location
+  type: string
+- name: enablersModule
+  displayName: Enablers module name
+  type: string
+- name: infrastructureModule
+  displayName: Infrastructure module name
+  type: string
+- name: sourceInfrastructureModule
+  displayName: Source infrastructure module name
+  type: string
+- name: dnsZoneSubscriptionID
+  displayName: Private DNS zone's for A records subscription ID
+  type: string
+- name: dnsZoneResourceGroupName
+  displayName: Dns Zone Resource Group Name
+  type: string
+- name: postgresServerName
+  displayName: Postgres Server Name
+  type: string
+- name: postgresSubnetName
+  displayName: Postgres Subnet Name
+  type: string
+- name: kubectlVersion
+  displayName: Kubectl version
+  type: string
+- name: helmVersion
+  displayName: Helm version
+  type: string
+- name: mainPipelineExecution
+  displayName: Main pipeline execution
+  type: boolean
+  default: false
+- name: condition
+  displayName: Run conditions for the job
+  type: string
+  default: ""
+- name: dependsOn
+  type: object
+  default: []
+
+stages:
+- stage: terraform_geo_recover
+  displayName: Geo recover resources
+  dependsOn: ${{ parameters.dependsOn }}
+  ${{ if ne(parameters.condition, '') }}:
+    condition: ${{ parameters.condition }}
+  jobs:
+  - ${{ if not(parameters.mainPipelineExecution) }}:
+    - template: rotate-a-dns-records-job.yml
+      parameters:
+        azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+        pool: ${{ parameters.pool }}
+        dnsZoneSubscriptionID: ${{ parameters.dnsZoneSubscriptionID }}
+        dnsZoneResourceGroupName: ${{ parameters.dnsZoneResourceGroupName }}
+        privateEndpointResourceGroupName: ${{ parameters.mainResourceGroupName }}
+        dnsRecordsModules:
+          - module: enablers
+            when: always_
+        kubectlVersion: ${{ parameters.kubectlVersion }}
+        helmVersion: ${{ parameters.helmVersion }}
+        mainPipelineExecution: false
+        condition: and(not(failed()), not(canceled()))
+
+  - job: psql_server
+    displayName: 'Geo recover psql server to ${{ parameters.geoRecoverTo }} '
+    ${{ if not(parameters.mainPipelineExecution) }}:
+      dependsOn: rotate_a_dns_records
+    pool:
+      ${{ if ne(parameters['pool'], 'ubuntu-latest') }}:
+        name: ${{ parameters.pool }}
+      ${{ if eq(parameters['pool'], 'ubuntu-latest') }}:
+        vmImage: ${{ parameters.pool }}
+    steps:
+    - template: templates/terraform-geo-recover-steps.yml
+      parameters:
+        azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+        terraformVersion: ${{ parameters.terraformVersion }}
+        terraformResourceGroupName: ${{ parameters.terraformResourceGroupName }}
+        terraformSaName: ${{ parameters.terraformSaName }}
+        terraformBackendContainerName: ${{ parameters.terraformBackendContainerName }}
+        saPublicAccessUpdate: ${{ parameters.saPublicAccessUpdate }}
+        mainResourceGroupName: ${{ parameters.mainResourceGroupName }}
+        location: ${{ parameters.location }}
+        enablersModule: ${{ parameters.enablersModule }}
+        infrastructureModule: ${{ parameters.infrastructureModule }}
+        sourceInfrastructureModule: ${{ parameters.sourceInfrastructureModule }}
+        postgresServerName: ${{ parameters.postgresServerName }}
+        postgresSubnetName: ${{ parameters.postgresSubnetName }}
+        geoRecoverTo: ${{ parameters.geoRecoverTo }}
+        mainPipelineExecution: ${{ parameters.mainPipelineExecution }}
+        dnsZoneSubscriptionID: ${{ parameters.dnsZoneSubscriptionID }}
+        dnsZoneResourceGroupName: ${{ parameters.dnsZoneResourceGroupName }}

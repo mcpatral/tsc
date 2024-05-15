@@ -1,0 +1,21 @@
+parameters:
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+  - name: catalogName
+    displayName: Databricks catalog Name 
+    type: string
+
+steps:
+  - task: AzureCLI@2
+    displayName: 'Unity Catalog: List schemas in catalog ${{ parameters.catalogName }}'
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        echo "=============== Listing databricks schemas in catalog ${{ parameters.catalogName }}... ================="
+        databricks schemas list "${{ parameters.catalogName }}"
+        if [[ $? -ne 0 ]]; then
+          echo "##vso[task.logissue type=error;]Unable to list schemas for catalog ${{ parameters.catalogName }}. Please check your permissions and ensure that the specified database or context exists. If there are connectivity issues or the service is temporarily unavailable, try again later. Verify that you have the necessary privileges to access and list schemas within the specified context."
+        fi

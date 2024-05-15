@@ -1,0 +1,52 @@
+parameters:
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+  - name: workingDirectory
+    displayName: Azure CLI working directory
+    type: string
+  - name: recordSetName
+    displayName: Name of the record set, relative to the name of the zone.
+    type: string
+  - name: dnsZoneSubscriptionID
+    displayName: Subscription ID of the Private DNS zone
+    type: string
+  - name: dnsZoneResourceGroupName
+    displayName: Name of resource group
+    type: string
+  - name: dnsZoneName
+    displayName: Name of the Private DNS zone (without a terminating dot).
+    type: string
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+  - name: stepNameSuffix
+    displayName: Step name suffix
+    type: string
+    default: ''
+
+steps:
+  - task: AzureCLI@2
+    name: ip_address_from_a_dns_record_${{ parameters.stepNameSuffix }}
+    displayName: Show ip for record ${{ parameters.stepNameSuffix }}
+    timeoutInMinutes: 3
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        echo "Subscription ID ${{ parameters.dnsZoneSubscriptionID }}"
+        echo "Resource group ${{ parameters.dnsZoneResourceGroupName }}"
+        echo "Record set ${{ parameters.recordSetName }}"
+        echo "Private DNS zone ${{ parameters.dnsZoneName }}"
+        ip_address_dns=$(az network private-dns record-set a show --subscription ${{ parameters.dnsZoneSubscriptionID }} -g ${{ parameters.dnsZoneResourceGroupName }} -n ${{ parameters.recordSetName }} -z ${{ parameters.dnsZoneName }} --query "aRecords[].ipv4Address[]" --output tsv)
+        if [[ $? -ne 0 ]]; then
+          echo "##vso[task.logissue type=warning;]The record set ${{ parameters.recordSetName }} may not exist in the Private DNS zone ${{ parameters.dnsZoneName }} and the resource group ${{ parameters.dnsZoneResourceGroupName }}."
+        fi
+        echo "Ip address obtained: $ip_address_dns"
+        echo "##vso[task.setvariable variable=ip_address_dns_env]$ip_address_dns"
+        echo "##vso[task.setvariable variable=ip_address_dns_output;isOutput=true]$ip_address_dns"
+      workingDirectory: ${{ parameters.workingDirectory }}

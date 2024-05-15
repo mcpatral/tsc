@@ -1,0 +1,95 @@
+calico:
+  ports:
+    postgresql: 5432
+    # vertica: 5433
+  cidrs:
+    postgresql: null
+    aks:
+      azureMetadata: 169.254.169.254/32
+      main:
+        nodes: null
+
+osm:
+  hosts:
+    adoMain: dev.azure.com
+    adoSub: "*.dev.azure.com"
+    acrHosts: "*.azurecr.io"
+    adoAgents: "*.vssps.visualstudio.com"
+    adoArtifacts: "*.vsblob.visualstudio.com"
+    adoPackages: "*.pkgs.visualstudio.com"    
+    adoServices: dc.services.visualstudio.com
+    adoAgentPackages: vstsagentpackage.azureedge.net
+    azureApi: management.azure.com
+    azureTestMgmt: "*.vstmr.visualstudio.com"
+    azureArtifactsCDN: "*.vsassets.io"
+    azureGraph: graph.microsoft.com
+    azureVault: "*.vault.azure.net"
+    azureAksWeu: "*.hcp.westeurope.azmk8s.io"
+    azureAksNeu: "*.hcp.northeurope.azmk8s.io"
+    azureAksWeuPrivate: "*.privatelink.westeurope.azmk8s.io"
+    azureAksNeuPrivate: "*.privatelink.northeurope.azmk8s.io"
+    azureCoreServices: "*.core.windows.net"
+    azureDatabricks: "*.azuredatabricks.net"
+    azureRedirect: aka.ms
+    azureStorageEdge: azcopyvnext.azureedge.net
+    azureAladdin: app.aladdin.microsoft.com
+    msLogin: login.microsoftonline.com
+    ipService: ifconfig.me
+    tfReleases: releases.hashicorp.com
+    tfRegistry: registry.terraform.io
+    tfCheckpoint: checkpoint-api.hashicorp.com
+    scRepos: github.com
+    scReposApi: api.github.com
+    scReposObjects: objects.githubusercontent.com
+    scReposRaws: raw.githubusercontent.com
+    helmStorage: storage.googleapis.com
+    helmGet: get.helm.sh
+    pyRegistry: pypi.org
+    pyHostsPackages: files.pythonhosted.org
+    apacheSparkRegistry: repos.spark-packages.org
+    mavenRegistry: "*.maven.org"
+    mavenApacheRegistry: repo.maven.apache.org
+    dockerHubRegistry1: registry-1.docker.io
+    authDocker: auth.docker.io
+    downloadDocker: download.docker.com
+    dockerCloudflare: production.cloudflare.docker.com
+    microsoftRegistry: packages.microsoft.com
+    postgresRegistry: apt.postgresql.org
+    registryK8sRegistry: registry.k8s.io
+    dlK8sRegistry:  dl.k8s.io
+    cdnDlK8sRegistry: cdn.dl.k8s.io
+    ghcrRegistry: ghcr.io
+    githubusercontentRegistry: pkg-containers.githubusercontent.com
+    alpinelinuxCdn: dl-cdn.alpinelinux.org
+    googleCloudArtifactRegistry: "*.pkg.dev"
+    amazonAwsRegistry: "*.amazonaws.com"
+    pythonOrg: www.python.org
+    java: download.java.net
+    dlCdnApache: dlcdn.apache.org
+    cloudfront: "*.cloudfront.net"
+  httpOnlyHosts:
+    debianRegistry: deb.debian.org
+
+adoAgents:
+  name: ado-agents
+  replicas: 3
+  progressDeadlineSeconds: 1800
+  allowPrivilegeEscalation: false
+  image:
+    registry: acrdevdaweucentralmanual.azurecr.io
+    repo: images/ado-agents
+    tag: 1.0.0
+    pullPolicy: Always
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "1"
+      memory: "2Gi"
+  nodeSelector:
+    pool: adoagents
+  azureDevops:
+    url: null # Required
+    token: null # Required
+    pool: null # Required

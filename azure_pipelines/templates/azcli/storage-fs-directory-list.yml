@@ -1,0 +1,51 @@
+parameters:
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+  - name: saName
+    displayName: storage account name
+    type: object
+    default: []
+  - name: containerNamesCommaSeparated
+    displayName: Storage container names
+    type: string
+  - name: directoryPath
+    displayName:  directory path of azure datalake storage
+    type: string
+    default: ''
+  - name: workingDirectory
+    displayName: Azure CLI working directory
+    type: string
+
+steps:
+  - task: AzureCLI@2
+    displayName: Listing file system directory in SA containers
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      workingDirectory: ${{ parameters.workingDirectory }}
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        echo "container_names: ${{ parameters.containerNamesCommaSeparated }}"
+        IFS=', ' read -ra containers <<< "${{ parameters.containerNamesCommaSeparated }}"
+
+        for container in "${containers[@]}"; do
+          echo "Creating file $container with list of folders inside"
+          touch ${{ parameters.saName }}_$container
+          
+          echo "Listing folders from storage account ${{ parameters.saName }} in container $container..."
+          adls="$(az storage fs directory list --path ${{ parameters.directoryPath }} -f $container --account-name ${{ parameters.saName }} --recursive true --auth-mode login | jq -r '.[].name')"
+          if [[ $? -ne 0 ]]; then
+            echo "##vso[task.logissue type=error;]Unable to list folders from storage account ${{ parameters.saName }} in $container. An unexpected error occurred. Please check your permissions, ensure there are no active operations or locks on the storage account ${{ parameters.saName }}, and try again. If the issue persists, contact support for assistance."
+            exit 1
+          fi
+          echo "Top-level directories: $adls"
+          if [[ -n "$adls" ]]; then
+            for folder in $adls; do
+              echo "$folder" | grep -qE "^[^/]+/?$"
+              echo $folder >> ${{ parameters.saName }}_$container
+            done
+          fi
+        done
+
+        echo "##vso[task.setvariable variable=path_to_list_files]$(pwd)"

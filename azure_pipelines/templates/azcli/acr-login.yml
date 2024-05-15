@@ -1,0 +1,30 @@
+parameters:
+  - name: acrName
+    displayName: Source Azure Container registry name
+    type: string
+  - name: acrSubscriptionId
+    displayName: Source ACR Azure subscription ID
+    type: string
+    default: ""
+  - name: azureServiceConnectionName
+    displayName: Source ACR Azure Service Connection name
+    type: string
+  - name: workingDirectory
+    displayName: Azure CLI working directory
+    type: string
+
+steps:
+  - task: AzureCLI@2
+    displayName: Login into Azure CR
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      addSpnToEnvironment: true
+      inlineScript: |
+        subscriptionId="${{ parameters.acrSubscriptionId }}"
+        if [[ "$subscriptionId" == "" ]]; then
+          subscriptionId=$(az account show --query "id" --output tsv)
+        fi
+        az acr login -n ${{ parameters.acrName }} --expose-token --subscription $subscriptionId --output tsv --query accessToken | docker login  ${{ parameters.acrName }}.azurecr.io -u 00000000-0000-0000-0000-000000000000 --password-stdin
+      workingDirectory: ${{ parameters.workingDirectory }}

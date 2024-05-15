@@ -1,0 +1,53 @@
+parameters:
+  - name: environmentName
+    displayName: Variable group name for environment to deploy
+    type: string
+  - name: imageNames
+    displayName: Image names to synchronize with ACR
+    type: object
+  - name: usePairInfrastructure
+    displayName: Use Pair Infrastructure
+    default: false
+    type: boolean
+
+variables:
+  - group: ${{ parameters.environmentName }}
+  - name: publicPoolName
+    value: ubuntu-latest
+  - name: terraformVersion
+    value: "1.5.0"
+  - name: paasResourceGroupName
+    value: rg-$(terraform_in_environment_type)-$(terraform_in_project)-$(terraform_in_location_short)
+  - name: terraformResourceGroupName
+    value: rg-$(terraform_in_environment_type)-$(terraform_in_project)-$(terraform_in_location_short)-state
+  - name: terraformSaName
+    value: sa$(terraform_in_environment_type)$(terraform_in_project)$(terraform_in_location_short)tfstate
+  - name: terraformBackendContainerName
+    value: $(terraform_in_environment_type)tfstate
+  - ${{ if eq(parameters.usePairInfrastructure, false) }}:
+    - name: enablersModule
+      value: enablers
+  - ${{ if eq(parameters.usePairInfrastructure, true) }}:
+    - name: enablersModule
+      value: pair_enablers
+
+trigger: none
+
+stages:
+  - template: azure_pipelines/acr-sync-stage.yml
+    parameters:
+      pool: ${{ variables.publicPoolName }} 
+      sourceAzureServiceConnectionName: $(source_acr_service_principal_name)
+      targetAzureServiceConnectionName: $(azure_service_principal_name)
+      terraformVersion: ${{ variables.terraformVersion }}
+      terraformResourceGroupName: ${{ variables.terraformResourceGroupName }}
+      terraformSaName: ${{ variables.terraformSaName }}
+      terraformBackendContainerName: ${{ variables.terraformBackendContainerName }}
+      imageNames: ${{ parameters.imageNames }}
+      sourceAcrName: $(source_acr_name)
+      sourceAcrRg: $(source_acr_rg)
+      sourceAcrSubscriptionId: $(source_acr_subscription_id)
+      paasResourceGroupName: ${{ variables.paasResourceGroupName }}
+      saPublicAccessUpdate: true
+      enablersModule: ${{ variables.enablersModule }}
+      useDocker: true

@@ -1,0 +1,35 @@
+parameters:
+  - name: privatePoolName
+    displayName: Private Pool Name
+    type: string
+  - name: azureDevOpsToken
+    displayName: Azure DevOps Token
+    type: string
+  - name: azureDevOpsUrl
+    displayName: Azure DevOps Url
+    type: string
+
+steps:
+  - task: Bash@3
+    displayName: Check existance of any online agent in a private pool
+    inputs:
+      targetType: 'inline'
+      script: |
+        pool_id=$(curl -s -H "Authorization: Bearer ${{ parameters.azureDevOpsToken }}" "${{ parameters.azureDevOpsUrl }}/_apis/distributedtask/pools?api-version=6.0" | jq '.value[] | select(.name=="${{ parameters.privatePoolName }}") | .id')
+        if [[ $pool_id == "" ]]; then
+          echo "Please create the private pool ${{ parameters.privatePoolName }}"
+          echo "##vso[task.logissue type=error;]Please create the private pool ${{ parameters.privatePoolName }} or update your Azure DevOps token"
+          exit 1
+        fi
+
+        echo "The id of the pool ${{ parameters.privatePoolName }} is: $pool_id"
+        agent_names=$(curl -s -H "Authorization: Bearer ${{ parameters.azureDevOpsToken }}" "${{ parameters.azureDevOpsUrl }}/_apis/distributedtask/pools/$pool_id/agents?api-version=6.0" | jq '.value[] | select(.status=="online") | .name')
+        echo -e "The online agents from the previous pool are: \n$agent_names"
+        
+        if [[ $agent_names == *"${{ parameters.privatePoolName }}"* ]]; then
+          select_private_pool="yes"
+        else
+          select_private_pool="no"
+        fi
+
+        echo "##vso[task.setvariable variable=select_private_pool]$select_private_pool"

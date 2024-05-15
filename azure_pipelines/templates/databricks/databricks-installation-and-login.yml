@@ -1,0 +1,62 @@
+parameters:
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+
+  - name:  resourceGroupName
+    displayName: Resource group name
+    type: string
+
+  - name: databricksWorkspaceName
+    displayName: Docker image names with tags
+    type: string
+
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+
+steps:
+  - task: AzureCLI@2
+    displayName: Databricks extension
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        echo "Installing databricks extensions"
+        az extension add --name databricks
+        echo "done"
+
+  - template: /azure_pipelines/templates/python/pip-install-package.yml
+    parameters:
+      commandArgs: '--upgrade requests'
+
+  - task: AzureCLI@2
+    displayName: Databricks login
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        echo "Getting databricks token and URL"
+        databricksToken=$(az account get-access-token --resource 2ff814a6-3304-4ab8-85cb-cd0e6f879c1d --query "accessToken" --output tsv)
+        if [[ $? -ne 0 ]]; then
+          echo "##vso[task.logissue type=error;]error retrieving the token"
+          exit 1
+        fi
+        workspaceURL=$(echo "https://$(az databricks workspace show --resource-group ${{ parameters.resourceGroupName }} --name ${{ parameters.databricksWorkspaceName }} --query workspaceUrl)" | tr -d '"')
+        if [[ $? -ne 0 ]]; then
+          echo "##vso[task.logissue type=error;]error retrieving the workspace"
+          exit 1
+        fi
+        echo "##vso[task.setvariable variable=workspaceURL]$workspaceURL"
+        echo "done"
+
+        echo "Creating databricks login file"
+        echo -e "[DEFAULT]\nhost = $workspaceURL \ntoken = $databricksToken" > ~/.databrickscfg
+        echo "done"

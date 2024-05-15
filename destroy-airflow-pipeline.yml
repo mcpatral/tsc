@@ -1,0 +1,48 @@
+trigger: none
+
+parameters:
+  - name: environmentName
+    displayName: Variable group name for environment to deploy
+    type: string
+
+variables:
+  - group: ${{ parameters.environmentName }}
+  - name: terraformVersion
+    value: "1.5.0"
+  - name: kubectlVersion
+    value: "1.27.3"
+  - name: helmVersion
+    value: "3.12.1"
+  - name: azureDevOpsPool
+    value: ${{ parameters.environmentName }}-agentpool
+  - name: infrastructureModule
+    value: infrastructure
+  - name: terraformResourceGroupName
+    value: rg-$(terraform_in_environment_type)-$(terraform_in_project)-$(terraform_in_location_short)-state
+  - name: terraformSaName
+    value: sa$(terraform_in_environment_type)$(terraform_in_project)$(terraform_in_location_short)tfstate
+  - name: terraformBackendContainerName
+    value: $(terraform_in_environment_type)tfstate
+  - name: terraformPlanContainerName
+    value: $(terraform_in_environment_type)tfplan
+  - name: mainKeyVaultName
+    value: kv-$(terraform_in_environment_type)-$(terraform_in_project)-$(terraform_in_location_short)-main
+  - name: mainResourceGroupName
+    value: rg-$(terraform_in_environment_type)-$(terraform_in_project)-$(terraform_in_location_short)
+
+stages:
+  - template: azure_pipelines/namespace-remove-stage.yml
+    parameters:
+      azureServiceConnectionName: $(azure_service_principal_name)
+      kubectlVersion: ${{ variables.kubectlVersion }}
+      helmVersion: ${{ variables.helmVersion }}
+      terraformVersion: ${{ variables.terraformVersion }}
+      terraformResourceGroupName: ${{ variables.terraformResourceGroupName }}
+      terraformSaName: ${{ variables.terraformSaName }}
+      terraformBackendContainerName: ${{ variables.terraformBackendContainerName }}
+      infrastructureModule: ${{ variables.infrastructureModule }}
+      aksClusterName: $(terraform_out_aks_cluster_name_main)
+      aksClusterResourceGroup: $(terraform_out_aks_cluster_resource_group_name_main)
+      helmReleaseName: $(airflow_helm_release_name)
+      namespace: $(airflow_namespace)
+      pool: ${{ variables.azureDevOpsPool }}

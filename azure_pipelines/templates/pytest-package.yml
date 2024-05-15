@@ -1,0 +1,42 @@
+parameters:
+  - name: environmentName
+    type: string
+
+  - name: branchName
+    type: string
+
+  - name: projectName
+    type: string
+
+  - name: feedName
+    type: string
+
+  - name: pyTestsRequirementsPath
+    type: string
+
+  - name: workingDirectory
+    type: string
+
+steps:
+  - checkout: self
+    fetchDepth: 0
+    clean: true
+    persistCredentials: true
+    
+  - template: python/pip-authenticate.yml
+    parameters:
+      projectName: ${{ parameters.projectName}}
+      feedName: ${{ parameters.feedName }}
+
+  - template: python/pip-install-package.yml
+    parameters:
+      commandArgs: '-r ${{ parameters.workingDirectory }}/${{ parameters.pyTestsRequirementsPath }}'
+
+  - template: python/pip-run-linter.yml
+    parameters:
+      workingDirectory: ${{ parameters.workingDirectory }}
+
+  - template: python/pip-run-pytest.yml
+    parameters:
+      environmentName: ${{ parameters.environmentName }}
+      workingDirectory: ${{ parameters.workingDirectory }}

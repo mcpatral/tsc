@@ -1,0 +1,52 @@
+parameters:
+  - name: terraformVersion
+    displayName: Terraform version to use
+    type: string
+  - name: workingDirectory
+    displayName: Terraform root module directory
+    type: string
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+  - name: terraformResourceGroupName
+    displayName: Terraform storage account resource group name
+    type: string
+  - name: terraformSaName
+    displayName: Terraform backend storage account name
+    type: string
+  - name: terraformBackendContainerName
+    displayName: Terraform backend container name
+    type: string
+  - name: terraformBackendKeyName
+    displayName: Terraform backend key name
+    type: string
+    default: ""
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+
+steps:
+  - task: charleszipp.azure-pipelines-tasks-terraform.azure-pipelines-tasks-terraform-installer.TerraformInstaller@0
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    displayName: Install Terraform
+    inputs:
+      terraformVersion: ${{ parameters.terraformVersion }}
+
+  - task: TerraformCLI@0
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    displayName: 'Run terraform init'
+    timeoutInMinutes: 2
+    inputs:
+      command: 'init'
+      workingDirectory: ${{ parameters.workingDirectory }}
+      backendType: 'azurerm'
+      backendServiceArm: ${{ parameters.azureServiceConnectionName }}
+      backendAzureRmResourceGroupName: ${{ parameters.terraformResourceGroupName }}
+      backendAzureRmStorageAccountName: ${{ parameters.terraformSaName }}
+      backendAzureRmContainerName: ${{ parameters.terraformBackendContainerName }}
+      ${{ if ne(parameters.terraformBackendKeyName, '') }}:
+        backendAzureRmKey: ${{ parameters.terraformBackendKeyName }}
+      allowTelemetryCollection: false

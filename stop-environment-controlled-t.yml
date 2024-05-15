@@ -1,0 +1,456 @@
+trigger: none
+
+schedules:
+- cron: '0 16 * * 1-5'
+  displayName: Stop
+  always: true
+  branches:
+    include:
+    - main
+
+parameters:
+  - name: environmentName
+    displayName: Variable group name for environment to deploy
+    type: string
+    default: t
+  - name: forceDelete
+    type: boolean
+    default: false
+  - name: initCommonTables
+    type: boolean
+    default: true    
+
+variables:
+  - group: ${{ parameters.environmentName }}
+  - name: terraformVersion
+    value: "1.5.0"
+  - name: kubectlVersion
+    value: "1.27.3"
+  - name: helmVersion
+    value: "3.12.1"
+  - name: terraformResourceGroupName
+    value: rg-$(terraform_in_environment_type)-$(terraform_in_project)-$(terraform_in_location_short)-state
+  - name: terraformSaName
+    value: sa$(terraform_in_environment_type)$(terraform_in_project)$(terraform_in_location_short)tfstate
+  - name: terraformBackendContainerName
+    value: $(terraform_in_environment_type)tfstate
+  - name: mainKeyVaultName
+    value: kv-$(terraform_in_environment_type)-$(terraform_in_project)-$(terraform_in_location_short)-main  
+  - name: paasResourceGroupName
+    value: rg-$(terraform_in_environment_type)-$(terraform_in_project)-$(terraform_in_location_short)
+  - name: azureDevOpsPool
+    value: ${{ parameters.environmentName }}-agentpool
+  - name: aksDevOpsNamespace
+    value: ${{ parameters.environmentName }}-agentpool
+  - name: locationInfra
+    value: $(terraform_in_location)
+  - name: locationInfraShort
+    value: $(terraform_in_location_short)
+  - name: enablersModule
+    value: enablers
+  - name: infrastructureModule
+    value: infrastructure
+  - name: contentModule
+    value: content    
+  - name: sourceInfrastructureModule
+    value: pair_infrastructure
+  - name: databricksAirflowPatTokenName
+    value: 'airflowdbwpattoken'
+  - name: masterKeyVaultName
+    value: kv-$(terraform_in_environment_type)-$(terraform_in_project)-$(terraform_in_location_short)-master 
+  - name: mainResourceGroupName
+    value: rg-$(terraform_in_environment_type)-$(terraform_in_project)-$(locationInfraShort)
+  - name: aksDevOpsClusterName
+    value: aks-$(terraform_in_environment_type)-$(terraform_in_project)-$(locationInfraShort)-devops-agents
+  - name: azureDevOpsUrl
+    value: "https://dev.azure.com/intrum-catalyst"
+  - name: publicPoolName
+    value: ubuntu-latest
+  - name: artifactsDirectoryPath
+    value: 'artifacts'
+  - name: databricksPackageUploadPath
+    value: 'FileStore/wheels'
+  # Databricks upload parameters notebooks
+  - name: notebookName
+    value: system_initialization
+  - name: notebookLanguage
+    value: 'PYTHON'
+  - name: notebookFolder
+    value: 'notebooks'
+  - name: notebookLocalPath
+    value: './${{ variables.notebookFolder }}/*'
+  - name: miscScriptsFolder
+    value: 'misc_scripts'
+  - name: miscScriptsLocalPath
+    value: './${{ variables.miscScriptsFolder }}/*'    
+  - name: databricksRemotePath
+    value: '/Shared/'
+  - name: notebookRequirementsPath
+    value: 'shared-resources/requirements/python/notebooks/requirements.txt'
+  - name: wheelsPackagesRemoteFileStore
+    value: '/dbfs/FileStore/wheels/'
+  - name: testRepositoryCheckout
+    value: 'test-suite'  
+  - name: devopsRepositoryCheckout
+    value: 'self'
+  - name: sharedResourcesRepositoryCheckout
+    value: 'shared-resources'
+  # Maven test suite pom file path, goals & profile
+  - name: mavenPomFile
+    value: 'test-suite/pom.xml'
+  - name: mavenGoal
+    value: 'clean test'
+  - name: mavenProfile
+    value: 'deployment_check'
+  # Build/Publish dags to Azure feed
+  # Note: For infra pipeline dags package will be downloaded from Azure feed
+  - name: downloadAirflowDags
+    value: true
+  - name: csvFilePath
+    value: 'shared-resources/libs_version/databricks_packages.csv'
+
+resources:
+  repositories:
+  - repository: airflow-dags
+    type: git
+    name: igtpoc/airflow-dags
+    ref: main
+  - repository: test-suite
+    type: git
+    name: igtpoc/test-suite
+    ref: main
+  - repository: shared-resources
+    type: git
+    name: igtpoc/shared-resources
+    ref: main
+
+stages:
+- template: azure_pipelines/acr-sync-stage.yml
+  parameters:
+    useDocker: false
+    stageNameSuffix: _on_private_agent
+    pool: ${{ variables.azureDevOpsPool }} 
+    sourceAzureServiceConnectionName: $(source_acr_service_principal_name)
+    targetAzureServiceConnectionName: $(azure_service_principal_name)
+    terraformVersion: ${{ variables.terraformVersion }}
+    terraformResourceGroupName: ${{ variables.terraformResourceGroupName }}
+    terraformSaName: ${{ variables.terraformSaName }}
+    terraformBackendContainerName: ${{ variables.terraformBackendContainerName }}
+    sourceAcrName: $(source_acr_name)
+    sourceAcrRg: $(source_acr_rg)
+    sourceAcrSubscriptionId: $(source_acr_subscription_id)
+    paasResourceGroupName: ${{ variables.paasResourceGroupName }}
+    enablersModule: enablers
+    imageNames:
+      - "$(source_acr_devops_agent_repo):$(source_acr_devops_agent_version)"
+      - images/ingress-nginx/controller:$(ingress_nginx_tag)
+      - images/ingress-nginx/kube-webhook-certgen:$(kube_webhook_certgen_tag)
+      # - images/vertica/verticadb-operator:$(vertica_operator_tag)
+      # - images/vertica/vertica-k8s:$(vertica_tag)
+      - images/airflow:$(airflow_tag)
+      - images/envoy-sidecar-helper:$(envoy_helper_tag)
+      - images/buildkit:$(buildx_tag)      
+    saPublicAccessUpdate: false         
+
+- template: azure_pipelines/airflow-stages.yml
+  parameters:
+    pool: ${{ variables.azureDevOpsPool }} 
+    azureServiceConnectionName: $(azure_service_principal_name)
+    terraformVersion: ${{ variables.terraformVersion }}
+    kubectlVersion: ${{ variables.kubectlVersion }}
+    helmVersion: ${{ variables.helmVersion }}
+    osmVersion: $(osm_version)
+    dnsZoneSubscriptionID: $(private_dns_zone_subscription_id)
+    dnsZoneResourceGroupName: $(private_dns_zone_resource_group)
+    resourceGroupName: ${{ variables.mainResourceGroupName }}    
+    terraformResourceGroupName: ${{ variables.terraformResourceGroupName }}
+    terraformSaName: ${{ variables.terraformSaName }}
+    terraformBackendContainerName: ${{ variables.terraformBackendContainerName }}
+    keyVaultName: ${{ variables.mainKeyVaultName }}
+    keyVaultSecretNames:
+      # - verticadbwritername
+      # - verticadbwriterpassword  
+      - airflowoauthspnclientid
+      - airflowoauthspnclientsecret
+      - airflowtenantid    
+      - psqlairflowuser
+      - psqlairflowpwd
+      - airflowfernetkey
+      - airflowpwd 
+      - ${{ variables.databricksAirflowPatTokenName }}
+      - saairflowkey
+      - clienttlskey
+      - clienttlscrt
+      - airflowsmtpclientsecret
+      - airflowsmtpclientid
+    saPublicAccessUpdate: false
+    airflowTag: $(airflow_tag)
+    pgBouncerTag: $(pg_bouncer_tag)
+    envoySidecarHelperTag: $(envoy_helper_tag)
+    helmReleaseName: $(airflow_helm_release_name)
+    helmNamespace: $(airflow_namespace)
+    ingressControllerName: $(ingress_helm_release_name)
+    ingressControllerNamespace: $(ingress_namespace)
+    # verticaNamespace: $(vertica_namespace)
+    enablersModule: enablers
+    infrastructureModule: infrastructure
+    contentModule: content
+    databricksPatTokenName: ${{ variables.databricksAirflowPatTokenName }}
+    airflowViewerGroupName: $(airflow_viewer_group_name)
+    airflowUserGroupName: $(airflow_user_group_name)
+    airflowAdminGroupName: $(airflow_admin_group_name)
+    vnetPeered: $(terraform_in_vnet_peered)
+    maxParallelDags: $(airflow_max_parallel_dags)
+    maxConcurency: $(airflow_max_concurency)
+    dependsOn:
+      - acr_sync_on_private_agent
+
+- template: azure_pipelines/databricks-upload-misc-scripts-stages.yml
+  parameters:
+    azureServiceConnectionName: $(azure_service_principal_name)
+    terraformVersion: ${{ variables.terraformVersion }}
+    terraformResourceGroupName: ${{ variables.terraformResourceGroupName }}
+    terraformSaName: ${{ variables.terraformSaName }}
+    terraformBackendContainerName: ${{ variables.terraformBackendContainerName }}
+    mainResourceGroupName: ${{ variables.mainResourceGroupName }}
+    infrastructureModule: ${{ variables.infrastructureModule }}
+    notebookLanguage: "SOURCE"
+    miscScriptsFolder: ${{ variables.miscScriptsFolder }}
+    miscScriptsLocalPath: ${{ variables.miscScriptsLocalPath }}
+    miscScriptsRequirementsPath: ${{ variables.notebookRequirementsPath }}
+    databricksRemotePath: ${{ variables.databricksRemotePath }}
+    devopsRepositoryCheckout: ${{ variables.devopsRepositoryCheckout }}
+    sharedResourcesRepositoryCheckout: ${{ variables.sharedResourcesRepositoryCheckout }}
+    workingDirectory: $(Build.SourcesDirectory)
+    pool: ${{ variables.azureDevOpsPool }}    
+    dependsOn:
+      - airflow_deployment                        
+
+- template: azure_pipelines/databricks-upload-libraries-stages.yml
+  parameters:
+    azureServiceConnectionName: $(azure_service_principal_name)
+    terraformVersion: ${{ variables.terraformVersion }}
+    terraformResourceGroupName: ${{ variables.terraformResourceGroupName }}
+    terraformSaName: ${{ variables.terraformSaName }}
+    terraformBackendContainerName: ${{ variables.terraformBackendContainerName }}
+    csvFilePath: ${{ variables.csvFilePath }}
+    devopsRepositoryCheckout: ${{ variables.devopsRepositoryCheckout }}
+    sharedResourcesRepositoryCheckout: ${{ variables.sharedResourcesRepositoryCheckout }}
+    artifactsDirectoryPath: ${{ variables.artifactsDirectoryPath }}
+    databricksPackageUploadPath: ${{ variables.databricksPackageUploadPath }}
+    mainResourceGroupName: ${{ variables.mainResourceGroupName }}
+    infrastructureModule: ${{ variables.infrastructureModule }}
+    pool: ${{ variables.azureDevOpsPool }}    
+    dependsOn:
+      - databricks_upload_misc_scripts
+
+- template: azure_pipelines/databricks-upload-notebooks-stages.yml
+  parameters:
+    azureServiceConnectionName: $(azure_service_principal_name)
+    terraformVersion: ${{ variables.terraformVersion }}
+    terraformResourceGroupName: ${{ variables.terraformResourceGroupName }}
+    terraformSaName: ${{ variables.terraformSaName }}
+    terraformBackendContainerName: ${{ variables.terraformBackendContainerName }}
+    mainResourceGroupName: ${{ variables.mainResourceGroupName }}
+    infrastructureModule: ${{ variables.infrastructureModule }}
+    notebookLanguage: ${{ variables.notebookLanguage }}
+    notebookFolder: ${{ variables.notebookFolder }}
+    notebookLocalPath: ${{ variables.notebookLocalPath }}
+    notebookRequirementsPath: ${{ variables.notebookRequirementsPath }}
+    databricksRemotePath: ${{ variables.databricksRemotePath }}
+    devopsRepositoryCheckout: ${{ variables.devopsRepositoryCheckout }}
+    sharedResourcesRepositoryCheckout: ${{ variables.sharedResourcesRepositoryCheckout }}
+    workingDirectory: $(Build.SourcesDirectory)
+    pool: ${{ variables.azureDevOpsPool }}
+    dependsOn:
+      - databricks_uploading_libraries
+
+- template: azure_pipelines/databricks-cluster-restart.yml
+  parameters:
+    azureServiceConnectionName: $(azure_service_principal_name)
+    terraformVersion: ${{ variables.terraformVersion }}
+    terraformResourceGroupName: ${{ variables.terraformResourceGroupName }}
+    terraformSaName: ${{ variables.terraformSaName }}
+    terraformBackendContainerName: ${{ variables.terraformBackendContainerName }}
+    mainResourceGroupName: ${{ variables.mainResourceGroupName }}
+    contentModule: ${{ variables.contentModule }}
+    infrastructureModule: ${{ variables.infrastructureModule }}        
+    workingDirectory: $(Build.SourcesDirectory)
+    pool: ${{ variables.azureDevOpsPool }}
+    dependsOn:
+      - databricks_upload_notebook            
+
+- template: azure_pipelines/databricks-run-notebooks-stages.yml
+  parameters:
+    azureServiceConnectionName: $(azure_service_principal_name)
+    terraformVersion: ${{ variables.terraformVersion }}
+    terraformResourceGroupName: ${{ variables.terraformResourceGroupName }}
+    terraformSaName: ${{ variables.terraformSaName }}
+    terraformBackendContainerName: ${{ variables.terraformBackendContainerName }}
+    mainResourceGroupName: ${{ variables.mainResourceGroupName }}
+    infrastructureModule: ${{ variables.infrastructureModule }}
+    contentModule: ${{ variables.contentModule }}
+    notebookName: ${{ variables.notebookName }}
+    environmentName: $(terraform_in_environment_type)
+    environmentNameUnityCatalogGroups: $(terraform_in_unity_catalog_environment_type)
+    systemSchemaNames: $(terraform_in_databricks_schemas)
+    storageAccountName: sa$(terraform_in_environment_type)$(terraform_in_project)$(terraform_in_location_short)dl
+    databricksRemotePath: ${{ variables.databricksRemotePath }}
+    databricksViewerGroups: $(databricks_system_job_viewer_groups)
+    wheelsPackagesRemoteFileStore: ${{ variables.wheelsPackagesRemoteFileStore }}
+    wheelsCsvFile: ${{ variables.csvFilePath }}
+    devopsRepositoryCheckout: ${{ variables.devopsRepositoryCheckout }}
+    sharedResourcesRepositoryCheckout: ${{ variables.sharedResourcesRepositoryCheckout }}  
+    workingDirectory: $(System.DefaultWorkingDirectory)
+    pool: ${{ variables.azureDevOpsPool }}
+    initCommonTables: ${{ parameters.initCommonTables }}
+    forceDelete: ${{ parameters.forceDelete }}        
+    dependsOn:
+      - databricks_cluster_restart
+
+- template: azure_pipelines/deploy-dags-steps.yml
+  parameters:
+    azureServiceConnectionName: $(azure_service_principal_name)
+    terraformVersion: ${{ variables.terraformVersion }}
+    terraformResourceGroupName: ${{ variables.terraformResourceGroupName }}
+    terraformSaName:  ${{ variables.terraformSaName }}
+    terraformBackendContainerName: ${{ variables.terraformBackendContainerName }}
+    infrastructureModule: ${{ variables.infrastructureModule }}
+    downloadAirflowDags: ${{ variables.downloadAirflowDags }}
+    dagsStorageAccount: $(terraform_out_sa_name_airflow)
+    pool: ${{ variables.azureDevOpsPool }}
+    devopsRepositoryCheckout: ${{ variables.devopsRepositoryCheckout }}
+    sharedResourcesRepositoryCheckout: ${{ variables.sharedResourcesRepositoryCheckout }}
+    dependsOn:
+      - databricks_run_notebook
+
+- template: azure_pipelines/test-suite-multi-stages.yml
+  parameters:
+    azureServiceConnectionName: $(azure_service_principal_name)
+    terraformVersion: ${{ variables.terraformVersion }}
+    terraformResourceGroupName: ${{ variables.terraformResourceGroupName }}
+    terraformSaName:  ${{ variables.terraformSaName }}
+    terraformBackendContainerName: ${{ variables.terraformBackendContainerName }}
+    mainResourceGroupName: ${{ variables.mainResourceGroupName }}
+    kvTestSuiteResourceGroupName: $(kv_test_central_rg)
+    enablersModule: ${{ variables.enablersModule }}
+    infrastructureModule: ${{ variables.infrastructureModule }}
+    contentModule: ${{ variables.contentModule }}
+    mainKeyVaultName: ${{ variables.mainKeyVaultName }}
+    mainKeyVaultSecretNames:
+      - airflowdbwspclientid
+      - airflowdbwspclientsecret
+      - airflowpwd
+    testKeyVaultName: $(kv_test_central_name)
+    testKeyVaultSecretNames: 
+      - airflowsptenantid
+      - airflowtestuser
+      - warehouseId
+      - dbwresourceid
+      - ${{ if not(notIn(parameters.environmentName, 't', 'd')) }}:
+        - clientIdDbw9999
+        - clientSecretDbw9999
+        - clientIdDbw9999pii
+        - clientSecretDbw9999pii
+    saPublicAccessUpdate: false
+    mavenOptions: >-
+      -DairflowUrl=https://airflow.$(terraform_out_private_dns_zone_name_intrum)/api/v1 
+      -DairflowUsername=$(airflowtestuser) 
+      -DairflowPassword=$(airflowpwd) 
+      -DdatabricksUrl=$(terraform_out_db_workspace_host)
+      -DdataBricksClusterId=$(terraform_out_databricks_single_cluster_id)
+      -DdataBricksWareHouseID=$(warehouseId)
+      -DdataBricksConnCatalog=$(terraform_out_catalog_name)
+      -DdataBricksDevopsClientId=$(airflowdbwspclientid)
+      -DdataBricksDevopsSecret=$(airflowdbwspclientsecret)
+      -DdataBricksDbw9999ClientId=$(clientIdDbw9999)
+      -DdataBricksDbw9999Secret=$(clientSecretDbw9999)
+      -DdataBricksDbw9999PiiClientId=$(clientIdDbw9999pii)
+      -DdataBricksDbw9999PiiSecret=$(clientSecretDbw9999pii)
+      -DdataBricksSchemas=$(terraform_in_databricks_schemas)
+      -DdataBricksResourceId=$(dbwresourceid)
+      -DtenantId=$(airflowsptenantid)
+      -DstorageAccount=$(terraform_out_sa_name_dl) 
+      -DsaTempName=$(terraform_out_sa_name_temp)
+      -P ${{ variables.mavenProfile }}
+    mavenPomFile: ${{ variables.mavenPomFile }}
+    mavenGoal: ${{ variables.mavenGoal }}
+    pool: ${{ variables.azureDevOpsPool }}
+    testRepositoryCheckout: ${{ variables.testRepositoryCheckout }}
+    devopsRepositoryCheckout: ${{ variables.devopsRepositoryCheckout }}
+    firstBlockProfiles: ['e2e_bulk', 'reuters', 'e2e_system9997','pure_connect']
+    secondBlockProfiles: ['landing_validations','deployment_check']
+    dependsOn:
+      - deploy_dags               
+
+- stage: Stop_env
+  displayName: Stop environment
+  dependsOn:
+    - landing_validations
+    - deployment_check
+  pool: 
+    vmImage: ubuntu-latest
+  jobs:
+    - job: Stop_env
+      displayName: Stop environments
+      steps:
+      - template: azure_pipelines/templates/azcli/sa-update-public-network-access.yml
+        parameters:
+          azureServiceConnectionName: $(azure_service_principal_name)
+          resourceGroupName:  ${{ variables.terraformResourceGroupName }}
+          workingDirectory: $(System.DefaultWorkingDirectory)
+          saName: ${{ variables.terraformSaName }}
+          publicAccess: Enabled
+          waitAfterUpdate: true  
+                
+      - template: azure_pipelines/templates/terraform-outputs.yml
+        parameters:
+          azureServiceConnectionName: $(azure_service_principal_name)
+          workingDirectory: $(System.DefaultWorkingDirectory)/terraform/infrastructure
+          terraformVersion: ${{ variables.terraformVersion }}
+          terraformResourceGroupName: ${{ variables.terraformResourceGroupName }}
+          terraformSaName: ${{ variables.terraformSaName }}
+          terraformBackendContainerName: ${{ variables.terraformBackendContainerName }} 
+
+      - template: azure_pipelines/templates/azcli/aks-environment-stop-start.yml
+        parameters:
+          azureServiceConnectionName: $(azure_service_principal_name)
+          aksClusterName: $(terraform_out_aks_cluster_name_main)
+          aksClusterResourceGroup: $(terraform_out_aks_cluster_resource_group_name_main)
+          workingDirectory: $(System.DefaultWorkingDirectory)
+          action: stop
+
+      - template: azure_pipelines/templates/azcli/psql-stop-start.yml
+        parameters:
+          azureServiceConnectionName: $(azure_service_principal_name)
+          psqlName: $(terraform_out_psql_server_name)
+          resourceGroup: $(paasResourceGroupName)
+          workingDirectory: $(System.DefaultWorkingDirectory)
+          action: stop       
+
+      - template: azure_pipelines/templates/terraform-outputs.yml
+        parameters:
+          azureServiceConnectionName: $(azure_service_principal_name)
+          workingDirectory: $(System.DefaultWorkingDirectory)/terraform/enablers
+          terraformVersion: ${{ variables.terraformVersion }}
+          terraformResourceGroupName: ${{ variables.terraformResourceGroupName }}
+          terraformSaName: ${{ variables.terraformSaName }}
+          terraformBackendContainerName: ${{ variables.terraformBackendContainerName }}           
+
+      - template: azure_pipelines/templates/azcli/aks-environment-stop-start.yml
+        parameters:
+          azureServiceConnectionName: $(azure_service_principal_name)
+          aksClusterName: $(terraform_out_aks_devops_name)
+          aksClusterResourceGroup: $(terraform_out_resource_group_name)
+          workingDirectory: $(System.DefaultWorkingDirectory)
+          action: stop   
+
+      - template: azure_pipelines/templates/azcli/sa-update-public-network-access.yml
+        parameters:
+          azureServiceConnectionName: $(azure_service_principal_name)
+          resourceGroupName:  ${{ variables.terraformResourceGroupName }}
+          workingDirectory: $(System.DefaultWorkingDirectory)
+          saName: ${{ variables.terraformSaName }}
+          publicAccess: Disabled
+          waitAfterUpdate: false
+          condition: or (always(), canceled())       

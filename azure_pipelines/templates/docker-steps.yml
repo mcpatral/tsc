@@ -1,0 +1,89 @@
+parameters:
+  - name: versionToSet
+    displayName: How to name the version
+    type: string    
+  - name: dockerDirectory
+    type: string
+  - name: devopsDirectory 
+    type: string
+    default: $(System.DefaultWorkingDirectory)
+  - name: azureServiceConnectionName
+    type: string
+  - name: azureContainerRegistry
+    type: string 
+  - name: azureGlobalContainerRegistry
+    type: string   
+  - name: azureGlobalContainerRegistryRg
+    type: string           
+  - name: imageName
+    type: string        
+  - name: dockerArgs
+    type: string               
+  - name: dependsOn
+    type: string      
+    default: ""         
+  - name: aksDevOpsNamespace
+    displayName: Variable group name for environment to deploy
+    type: string    
+  - name: terraformVersion
+    type: string    
+  - name: terraformResourceGroupName
+    displayName: Resource group for TF
+    type: string
+  - name: terraformSaName
+    displayName: Resource group for TF
+    type: string
+  - name: terraformBackendContainerName
+    displayName: Resource group for TF
+    type: string    
+  - name: buildxTag
+    displayName: buildx to use
+    type: string      
+
+steps:
+  - template: terraform-outputs.yml
+    parameters:
+      azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+      workingDirectory: ${{ parameters.devopsDirectory }}/terraform/enablers
+      terraformVersion: ${{ parameters.terraformVersion }}
+      terraformResourceGroupName: ${{ parameters.terraformResourceGroupName }}
+      terraformSaName: ${{ parameters.terraformSaName }}
+      terraformBackendContainerName: ${{ parameters.terraformBackendContainerName }}
+
+  - template: azcli/aks-get-credentials.yml
+    parameters:
+      aksClusterName: $(terraform_out_aks_devops_name)
+      aksClusterResourceGroup: $(terraform_out_resource_group_name)
+      azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+      workingDirectory: ${{ parameters.dockerDirectory }} 
+
+  - template: docker/enable-builder-pods.yml
+    parameters:
+      workingDirectory: ${{ parameters.dockerDirectory }}
+      name: ${{ replace(parameters.imageName, '/', '-') }}
+      image: "$(terraform_out_acr_name_main).azurecr.io/images/buildkit:${{ parameters.buildxTag }}"
+      aksDevOpsNamespace: ${{ parameters.aksDevOpsNamespace }}                      
+
+  - template: azcli/acr-login.yml
+    parameters:
+      azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+      acrName: ${{ parameters.azureGlobalContainerRegistry }}
+      workingDirectory: ${{ parameters.dockerDirectory }}
+
+  - template: azcli/acr-login.yml
+    parameters:
+      azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+      acrName: ${{ parameters.azureContainerRegistry }}
+      workingDirectory: ${{ parameters.dockerDirectory }}   
+
+  - template: docker/build.yml
+    parameters:
+      acrName: ${{ parameters.azureContainerRegistry }}
+      workingDirectory: ${{ parameters.dockerDirectory }}
+      imageName: 'images/${{ parameters.imageName }}:${{ parameters.versionToSet }}'
+      dockerArgs: '${{ parameters.dockerArgs }}'                       
+
+  - template: docker/rm-builder-pods.yml
+    parameters:
+      workingDirectory: ${{ parameters.dockerDirectory }}
+      name: ${{ replace(parameters.imageName, '/', '-') }}        

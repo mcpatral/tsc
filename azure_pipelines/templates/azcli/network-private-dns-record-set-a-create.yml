@@ -1,0 +1,50 @@
+parameters:
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+  - name: workingDirectory
+    displayName: Azure CLI working directory
+    type: string
+  - name: dnsZoneSubscriptionID
+    displayName: Subscription ID of the Private DNS zone
+    type: string
+  - name: dnsZoneResourceGroupName
+    displayName: Dns Zone Resource Group Name
+    type: string
+  - name: dnsZoneName
+    displayName: Dns Zone Name
+    type: string
+  - name: recordSetName
+    displayName: Name of the record set, relative to the name of the zone.
+    type: string
+  - name: ttl_seconds
+    displayName: Time to live for the A DNS record in seconds.
+    type: number
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+  - name: stepNameSuffix
+    displayName: Step name suffix
+    type: string
+    default: ''
+
+steps:
+  - task: AzureCLI@2
+    name: create_empty_a_record_for_${{ parameters.stepNameSuffix }}
+    displayName: Create the empty a record set ${{ parameters.stepNameSuffix }}
+    timeoutInMinutes: 3
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        echo "##vso[task.logissue type=warning;]the record set ${{ parameters.recordSetName }} will be created in the Private DNS zone ${{ parameters.dnsZoneName }} and the resource group ${{ parameters.dnsZoneResourceGroupName }}."
+        echo "Creating the empty A DNS record set ${{ parameters.recordSetName }} to ${{ parameters.dnsZoneName }} and ${{ parameters.dnsZoneResourceGroupName }}"
+        az network private-dns record-set a create --subscription ${{ parameters.dnsZoneSubscriptionID }} -g ${{ parameters.dnsZoneResourceGroupName }} -z ${{ parameters.dnsZoneName }} -n ${{ parameters.recordSetName }} --ttl ${{ parameters.ttl_seconds }}
+        if [[ $? -ne 0 ]]; then
+          echo "##vso[task.logissue type=warning;]the empty record ${{ parameters.recordSetName }} cannot be created."
+        fi
+      workingDirectory: ${{ parameters.workingDirectory }}

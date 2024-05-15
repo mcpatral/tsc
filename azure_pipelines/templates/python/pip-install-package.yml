@@ -1,0 +1,19 @@
+parameters:
+  - name: commandArgs
+    displayName: Package to install
+    type: string
+
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+
+steps:
+  - task: Bash@3
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    displayName: 'Installing python packages'
+    inputs:
+      targetType: 'inline'
+      script: |
+        python3 -m pip install ${{ parameters.commandArgs }}

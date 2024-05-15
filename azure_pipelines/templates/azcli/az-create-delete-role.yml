@@ -1,0 +1,33 @@
+parameters:
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+  - name: workingDirectory
+    displayName: Working directory
+    type: string
+  - name: action
+    displayName: Action to do with role assignment
+    type: string
+    values:
+     - create
+     - delete
+  - name: role
+    displayName: Role Assignment Name
+    type: string
+  - name: resourceGroupName
+    displayName: Resource group Name
+    type: string
+
+steps:
+- task: AzureCLI@2
+  displayName: ${{ parameters.action }} role assignment
+  inputs:
+    azureSubscription: ${{ parameters.azureServiceConnectionName }}
+    scriptType: 'bash'
+    scriptLocation: 'inlineScript'
+    addSpnToEnvironment: true
+    inlineScript: |
+      scope=$(az group show --name ${{ parameters.resourceGroupName }} --query 'id' --output tsv)
+      az role assignment ${{ parameters.action }} --assignee $servicePrincipalId \
+      --role "${{ parameters.role }}" --scope "$scope"
+    workingDirectory: ${{ parameters.workingDirectory }}

@@ -1,0 +1,102 @@
+trigger: none
+
+parameters:
+  - name: environmentName
+    displayName: Variable group name for environment to deploy
+    type: string
+  - name: geoRecoverFromPair
+    displayName: Recover infra from pair to main (only true is available for now)
+    default: true
+    type: boolean 
+  - name: usePublicPool
+    displayName: Use public pool
+    type: boolean
+
+variables:
+  - group: ${{ parameters.environmentName }}
+  - name: terraformVersion
+    value: "1.5.0"
+  - name: kubectlVersion
+    value: "1.27.3"
+  - name: helmVersion
+    value: "3.12.1"
+  - ${{ if eq(parameters.geoRecoverFromPair, true) }}:
+    - name: aksDevOpsNamespace
+      value: ${{ parameters.environmentName }}-agentpool
+    - name: azureDevOpsPool
+      value: ${{ parameters.environmentName }}-agentpool
+    - name: locationInfra
+      value: $(terraform_in_location)
+    - name: locationInfraShort
+      value: $(terraform_in_location_short)
+    - name: enablersModule
+      value: enablers
+    - name: infrastructureModule
+      value: infrastructure
+    - name: geoRecoverTo
+      value: main
+    - name: sourceInfrastructureModule
+      value: pair_infrastructure
+    - name: sourceLocationShort
+      value: $(terraform_in_pair_location_short)
+  # - ${{ if eq(parameters.geoRecoverFromPair, false) }}:
+  #   - name: aksDevOpsNamespace
+  #     value: ${{ parameters.environmentName }}-pair-agentpool
+  #   - name: azureDevOpsPool
+  #     value: ${{ parameters.environmentName }}-pair-agentpool
+  #   - name: locationInfra
+  #     value: $(terraform_in_pair_location)
+  #   - name: locationInfraShort
+  #     value: $(terraform_in_pair_location_short)
+  #   - name: enablersModule
+  #     value: pair_enablers
+  #   - name: infrastructureModule
+  #     value: pair_infrastructure
+  #   - name: geoRecoverTo
+  #     value: pair
+  #   - name: sourceInfrastructureModule
+  #     value: infrastructure
+  #   - name: sourceLocationShort
+  #     value: $(terraform_in_location_short)
+  #   - name: infraResourceGroupName
+  #     value: rg-$(terraform_in_environment_type)-$(terraform_in_project)-$(terraform_in_location_short)
+  - name: terraformResourceGroupName
+    value: rg-$(terraform_in_environment_type)-$(terraform_in_project)-$(terraform_in_location_short)-state
+  - name: terraformSaName
+    value: sa$(terraform_in_environment_type)$(terraform_in_project)$(terraform_in_location_short)tfstate
+  - name: terraformBackendContainerName
+    value: $(terraform_in_environment_type)tfstate
+  - name: paasResourceGroupName
+    value: rg-$(terraform_in_environment_type)-$(terraform_in_project)-$(terraform_in_location_short)
+  - name: mainResourceGroupName
+    value: rg-$(terraform_in_environment_type)-$(terraform_in_project)-$(locationInfraShort)
+  - name: publicPoolName
+    value: ubuntu-latest
+
+stages:
+- template: azure_pipelines/terraform-geo-recover-stage.yml
+  parameters:
+    azureServiceConnectionName: $(azure_service_principal_name)
+    terraformVersion: ${{ variables.terraformVersion }}
+    kubectlVersion: ${{ variables.kubectlVersion }}
+    helmVersion: ${{ variables.helmVersion }}
+    terraformResourceGroupName: ${{ variables.terraformResourceGroupName }}
+    terraformSaName: ${{ variables.terraformSaName }}
+    terraformBackendContainerName: ${{ variables.terraformBackendContainerName }}
+    ${{ if parameters.usePublicPool }}:
+      pool: ${{ variables.publicPoolName }}
+      saPublicAccessUpdate: true
+    ${{ if not(parameters.usePublicPool) }}:
+      pool: ${{ variables.azureDevOpsPool }}
+      saPublicAccessUpdate: false
+    geoRecoverTo: ${{ variables.geoRecoverTo }}
+    mainResourceGroupName: ${{ variables.mainResourceGroupName }}
+    location: $(locationInfra)
+    enablersModule: ${{ variables.enablersModule }}
+    infrastructureModule: ${{ variables.infrastructureModule }}
+    sourceInfrastructureModule: ${{ variables.sourceInfrastructureModule }}
+    dnsZoneSubscriptionID: $(private_dns_zone_subscription_id)
+    dnsZoneResourceGroupName: $(private_dns_zone_resource_group)
+    postgresServerName: "psqlflexsrv-$(terraform_in_environment_type)-$(terraform_in_project)-$(locationInfraShort)"
+    postgresSubnetName: "subnet-$(terraform_in_environment_type)-$(terraform_in_project)-$(locationInfraShort)-postgres"
+    mainPipelineExecution: false

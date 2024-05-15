@@ -1,0 +1,211 @@
+parameters:
+  - name: plan
+    displayName: Prepare plan?
+    type: boolean
+  - name: outputs
+    displayName: Set outputs?
+    type: boolean
+    default: false
+  - name: additionalPlanOptions
+    displayName: Terraform plan settings
+    type: string
+    default: ""
+  - name: terraformVersion
+    displayName: Terraform version to use
+    type: string
+  - name: planArtifactName
+    displayName: Plan artifact name
+    type: string
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+  - name: workingDirectory
+    displayName: Terraform root module directory
+    type: string
+  - name: terraformResourceGroupName
+    displayName: Terraform storage account resource group name
+    type: string
+  - name: terraformSaName
+    displayName: Terraform backend storage account name
+    type: string
+  - name: terraformBackendContainerName
+    displayName: Terraform backend container name
+    type: string
+  - name: terraformBackendKeyName
+    displayName: Terraform backend key name
+    type: string
+    default: ""
+  - name: terraformPlanContainerName
+    displayName: Terraform plan container name
+    type: string
+  - name: keyVaultName
+    displayName: Key vault name
+    type: string
+    default: ""
+  - name: keyVaultSecretNames
+    displayName: Key vault secret names
+    type: object
+    default: []
+  - name: saPublicAccessUpdate
+    displayName: updating public access in the storage account for Terraform
+    type: boolean
+
+steps:
+  - ${{ if eq(parameters.plan, true) }}:
+    - template: utils/terraform-var-and-commandoptions.yml
+
+    - ${{ if parameters.saPublicAccessUpdate }}:
+      - template: utils/get-agent-ip.yml
+        parameters:
+          workingDirectory: $(System.DefaultWorkingDirectory)  
+
+      - ${{ if ne(length(parameters.keyVaultSecretNames), 0) }}:
+        - template: azcli/kv-network-rule.yml
+          parameters:
+            kvName: ${{ parameters.keyVaultName }}
+            resourceGroupName: ${{ parameters.terraformResourceGroupName }}
+            ipRange: $(agentIp)
+            action: "add"
+            waitAfterUpdate: false
+            azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+            workingDirectory: $(System.DefaultWorkingDirectory)  
+                    
+        - template: azcli/kv-update-public-network-access.yml
+          parameters:
+            azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+            resourceGroupName:  ${{ parameters.terraformResourceGroupName }}
+            workingDirectory: $(System.DefaultWorkingDirectory)
+            kvName: ${{ parameters.keyVaultName }}
+            publicAccess: Enabled
+            waitAfterUpdate: true
+
+    - template: azcli/kv-get-secrets.yml
+      parameters:
+        azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+        keyVaultName: ${{ parameters.keyVaultName }}
+        keyVaultSecretNames: ${{ parameters.keyVaultSecretNames }}
+
+    - ${{ if parameters.saPublicAccessUpdate }}:
+      - ${{ if ne(length(parameters.keyVaultSecretNames), 0) }}:
+        - template: azcli/kv-network-rule.yml
+          parameters:
+            kvName: ${{ parameters.keyVaultName }}
+            resourceGroupName: ${{ parameters.terraformResourceGroupName }}
+            ipRange: $(agentIp)
+            action: "remove"
+            waitAfterUpdate: false
+            azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+            workingDirectory: $(System.DefaultWorkingDirectory)
+
+    - ${{ if ne(length(parameters.keyVaultSecretNames), 0) }}:
+      - template: azcli/kv-update-public-network-access.yml
+        parameters:
+          azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+          resourceGroupName:  ${{ parameters.terraformResourceGroupName }}
+          workingDirectory: $(System.DefaultWorkingDirectory)
+          kvName: ${{ parameters.keyVaultName }}
+          publicAccess: Disabled
+          waitAfterUpdate: false
+          condition: or (always(), canceled())
+
+      - task: Bash@3
+        displayName: 'Setting secrets as Terraform variables'
+        inputs:
+          targetType: 'inline'
+          script: |
+            IFS=',' read -r -a secrets <<< "${{ join(',', parameters.keyVaultSecretNames) }}"
+
+            declare secretParams=""
+            
+            for secret in "${secrets[@]}"
+            do
+              secret_var_name="value_$secret"
+              secretParams+=" -var $secret=\"${!secret_var_name}\""
+            done
+
+            echo "Additional flags to be populated to Terraform plan command:"
+            echo "$secretParams"
+
+            echo "##vso[task.setvariable variable=COMMANDOPTIONS;isSecret=false;]$(COMMANDOPTIONS) $secretParams"
+        env:
+          ${{ each secret in parameters.keyVaultSecretNames }}:
+            value_${{ secret }}: $(${{ secret }})       
+  
+  - ${{ if parameters.saPublicAccessUpdate }}:
+    - template: azcli/sa-update-public-network-access.yml
+      parameters:
+        azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+        resourceGroupName:  ${{ parameters.terraformResourceGroupName }}
+        workingDirectory: $(System.DefaultWorkingDirectory)
+        saName: ${{ parameters.terraformSaName }}
+        publicAccess: Enabled
+        waitAfterUpdate: true
+
+  - template: terraform/init.yml
+    parameters:
+      terraformVersion: ${{ parameters.terraformVersion }}
+      workingDirectory: ${{ parameters.workingDirectory }}
+      azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+      terraformResourceGroupName: ${{ parameters.terraformResourceGroupName }}
+      terraformSaName: ${{ parameters.terraformSaName }}
+      terraformBackendContainerName: ${{ parameters.terraformBackendContainerName }}
+      terraformBackendKeyName: ${{ parameters.terraformBackendKeyName }}
+
+  - ${{ if eq(parameters.plan, true) }}:
+    - task: TerraformCLI@0
+      displayName: 'Run terraform plan'
+      inputs:
+        command: 'plan'
+        workingDirectory: ${{ parameters.workingDirectory }}
+        environmentServiceName: ${{ parameters.azureServiceConnectionName }}
+        allowTelemetryCollection: false
+        publishPlanResults: ${{ parameters.planArtifactName }}
+        commandOptions: >-
+          $(COMMANDOPTIONS)
+          ${{ parameters.additionalPlanOptions }}
+    
+    - template: azcli/storage-download-upload-blob.yml
+      parameters:
+        azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+        action: upload
+        saName: ${{ parameters.terraformSaName }}
+        saContainerName: ${{ parameters.terraformPlanContainerName }}
+        blobName: ${{ parameters.planArtifactName }}/terraform.tfplan
+        fileName: $(System.DefaultWorkingDirectory)/terraform.tfplan
+        workingDirectory: ${{ parameters.workingDirectory }}
+
+  - ${{ if eq(parameters.plan, false) }}:
+    - template: azcli/storage-download-upload-blob.yml
+      parameters:
+        azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+        action: download
+        saName: ${{ parameters.terraformSaName }}
+        saContainerName: ${{ parameters.terraformPlanContainerName }}
+        blobName: ${{ parameters.planArtifactName }}/terraform.tfplan
+        fileName: $(System.DefaultWorkingDirectory)/terraform.tfplan
+        workingDirectory: ${{ parameters.workingDirectory }}
+
+    - task: TerraformCLI@0
+      displayName: 'Run terraform apply'
+      inputs:
+        command: apply
+        workingDirectory: ${{ parameters.workingDirectory }}
+        environmentServiceName: ${{ parameters.azureServiceConnectionName }}
+        allowTelemetryCollection: false
+        commandOptions: '$(System.DefaultWorkingDirectory)/terraform.tfplan'
+        runAzLogin: true
+
+    - ${{ if eq(parameters.outputs, true) }}:
+      - template: terraform/outputs.yml
+        parameters:
+          workingDirectory: ${{ parameters.workingDirectory }}
+
+  - template: azcli/sa-update-public-network-access.yml
+    parameters:
+      azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+      resourceGroupName:  ${{ parameters.terraformResourceGroupName }}
+      workingDirectory: $(System.DefaultWorkingDirectory)
+      saName: ${{ parameters.terraformSaName }}
+      publicAccess: Disabled
+      waitAfterUpdate: false
+      condition: or (always(), canceled())

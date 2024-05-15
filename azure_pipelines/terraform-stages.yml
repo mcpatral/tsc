@@ -1,0 +1,172 @@
+parameters:
+  - name: module
+    type: string
+  - name: azureServiceConnectionName
+    type: string
+  - name: additionalPlanOptions
+    type: string
+    default: ""
+  - name: terraformVersion
+    type: string
+  - name: pool
+    type: string
+  - name: dependsOn
+    type: object
+    default: []
+  - name: terraformResourceGroupName
+    displayName: Resource group of Storage account for Terraform files
+    type: string
+  - name: terraformSaName
+    displayName: Storage Account name for Terraform files
+    type: string
+  - name: terraformBackendContainerName
+    displayName: Storage Account Container name for Terraform state files
+    type: string
+  - name: terraformBackendKeyName
+    displayName: Terraform backend key name
+    type: string
+    default: ""
+  - name: terraformPlanContainerName
+    displayName: Storage Account Container name for Terraform plan files
+    type: string
+  - name: keyVaultName
+    displayName: Key vault name
+    type: string
+    default: ""
+  - name: keyVaultSecretNames
+    displayName: Key vault secret names
+    type: object
+    default: []
+  - name: stageNameSuffix
+    displayName: Stage Name Suffix
+    type: string
+    default: ""
+  - name: condition
+    displayName: Condition to run the stage
+    type: string
+    default: ""
+  - name: saPublicAccessUpdate
+    displayName: Storage Account Public Access Update
+    type: boolean
+  - name: kubectlVersion
+    displayName: Kubectl version
+    type: string
+  - name: helmVersion
+    displayName: Helm version
+    type: string
+  - name: mainResourceGroupName
+    displayName: Main resource group
+    type: string
+  - name: dnsZoneSubscriptionID
+    displayName: Private DNS zone's for A records subscription ID
+    type: string
+    default:
+  - name: dnsZoneResourceGroupName
+    displayName: Private DNS Zone resource group name
+    type: string
+    default:
+  - name: rotateDnsRecords
+    displayName: Rotate DNS Records
+    type: boolean
+    default: false
+  - name: dnsRecordsModules
+    displayName: DNS Records
+    type: object
+    default: []
+  - name: planValidateTimeout
+    displayName: Terraform plan validation timeout in minutes
+    type: number
+    default: 5
+  - name: additionalInstructions
+    displayName: Additional instructions to write into validate confirmation message
+    type: string
+    default: ""
+
+stages:
+  - stage: ${{ parameters.module }}${{ parameters.stageNameSuffix }}
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    dependsOn: ${{ parameters.dependsOn }}
+    displayName: ${{ parameters.module }} from ${{ parameters.pool }}
+    jobs:
+      - ${{ if eq(parameters.rotateDnsRecords, true) }}: 
+        - template: rotate-a-dns-records-job.yml
+          parameters:
+            azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+            pool: ${{ parameters.pool }}
+            dnsZoneSubscriptionID: $(private_dns_zone_subscription_id)
+            dnsZoneResourceGroupName: ${{ parameters.dnsZoneResourceGroupName }}
+            privateEndpointResourceGroupName: ${{ parameters.mainResourceGroupName }}
+            dnsRecordsModules: ${{ parameters.dnsRecordsModules }}
+            kubectlVersion: ${{ parameters.kubectlVersion }}
+            helmVersion: ${{ parameters.helmVersion }}
+            mainPipelineExecution: true
+            condition: and(not(failed()), not(canceled()))
+      - job: ${{ parameters.module }}_plan
+        displayName: ${{ parameters.module }} plan generation
+        ${{ if eq(parameters.rotateDnsRecords, true) }}:
+          condition: and(not(failed()), not(canceled()), succeeded('rotate_a_dns_records'))
+          dependsOn: 
+            - rotate_a_dns_records
+        pool:
+          ${{ if ne(parameters.pool, 'ubuntu-latest') }}:
+            name: ${{ parameters.pool }}
+          ${{ if eq(parameters.pool, 'ubuntu-latest') }}:
+            vmImage: ${{ parameters.pool }}
+        steps:
+          - template: templates/terraform-steps.yml
+            parameters:
+              plan: true
+              planArtifactName: ${{ parameters.module }}-plan
+              azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+              workingDirectory: $(System.DefaultWorkingDirectory)/terraform/${{ parameters.module }}
+              terraformVersion: ${{ parameters.terraformVersion }}
+              terraformResourceGroupName: ${{ parameters.terraformResourceGroupName }}
+              terraformSaName: ${{ parameters.terraformSaName }}
+              terraformBackendContainerName: ${{ parameters.terraformBackendContainerName }}
+              terraformBackendKeyName: ${{ parameters.terraformBackendKeyName }}
+              terraformPlanContainerName: ${{ parameters.terraformPlanContainerName }}
+              keyVaultName: ${{ parameters.keyVaultName }}
+              keyVaultSecretNames: ${{ parameters.keyVaultSecretNames }}
+              saPublicAccessUpdate: ${{ parameters.saPublicAccessUpdate }}
+              additionalPlanOptions: >-
+                ${{ parameters.additionalPlanOptions }}
+
+      - job: ${{ parameters.module }}_plan_validate
+        displayName: Terraform plan validation
+        condition: and(succeeded('${{ parameters.module }}_plan'), ne(variables.terraform_auto_approve, 'true'))
+        timeoutInMinutes: ${{ parameters.planValidateTimeout }}
+        pool: server
+        dependsOn: 
+          - ${{ parameters.module }}_plan
+        steps:
+          - task: ManualValidation@0
+            displayName: Terraform plan review
+            inputs:
+              instructions: Please review Terraform plan and approve/reject plan execution. ${{ parameters.additionalInstructions }}
+      
+      - job: ${{ parameters.module }}_apply
+        displayName: ${{ parameters.module }} plan apply
+        condition: or(and(succeeded('${{ parameters.module }}_plan'), eq(variables.terraform_auto_approve, 'true')), and(succeeded('${{ parameters.module }}_plan_validate'), ne(variables.terraform_auto_approve, 'true')))
+        pool:
+          ${{ if ne(parameters['pool'], 'ubuntu-latest') }}:
+            name: ${{ parameters.pool }}
+          ${{ if eq(parameters['pool'], 'ubuntu-latest') }}:
+            vmImage: ${{ parameters.pool }}
+        dependsOn:
+          - ${{ parameters.module }}_plan_validate
+          - ${{ parameters.module }}_plan
+        steps:
+          - template: templates/terraform-steps.yml
+            parameters:
+              plan: false
+              planArtifactName: ${{ parameters.module }}-plan
+              azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+              terraformVersion: ${{ parameters.terraformVersion }}
+              terraformResourceGroupName: ${{ parameters.terraformResourceGroupName }}
+              terraformSaName: ${{ parameters.terraformSaName }}
+              terraformBackendContainerName: ${{ parameters.terraformBackendContainerName }}
+              terraformPlanContainerName: ${{ parameters.terraformPlanContainerName }}
+              terraformBackendKeyName: ${{ parameters.terraformBackendKeyName }}
+              workingDirectory: $(System.DefaultWorkingDirectory)/terraform/${{ parameters.module }}
+              saPublicAccessUpdate: ${{ parameters.saPublicAccessUpdate }}

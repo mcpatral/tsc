@@ -1,0 +1,48 @@
+parameters:
+  - name: aksClusterName
+    displayName: AKS Cluster name
+    type: string
+  - name: aksClusterResourceGroup
+    displayName: AKS Cluster resource group name
+    type: string
+  - name: helmReleaseName
+    displayName: Helm release name
+    type: string
+  - name: namespace
+    displayName: Namespace to install chart
+    type: string
+  - name: helmVersion
+    displayName: Helm version to use
+    type: string
+  - name: skipHelmInstall
+    displayName: Skip installation of Helm
+    type: boolean
+    default: false
+  - name: helmAdditionalFlags
+    displayName: Helm command-line additional flags
+    type: string
+    default: 
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+
+steps:
+  - ${{ if not(parameters.skipHelmInstall) }}:
+    - template: helm-installer.yml
+      parameters:
+        helmVersion: ${{ parameters.helmVersion }}
+  
+  - task: HelmDeploy@0
+    displayName: Helm release uninstall
+    inputs:
+      connectionType: 'Azure Resource Manager'
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      azureResourceGroup: ${{ parameters.aksClusterResourceGroup }}
+      kubernetesCluster: ${{ parameters.aksClusterName }}
+      useClusterAdmin: true
+      namespace: ${{ parameters.namespace }}
+      command: 'uninstall'
+      arguments: >-
+        ${{ parameters.helmReleaseName }}
+        ${{ parameters.helmAdditionalFlags }}
+      publishPipelineMetadata: false

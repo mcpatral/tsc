@@ -1,0 +1,45 @@
+parameters:
+  - name: mavenOptions
+    displayName: maven options parameters
+    type: string
+  - name: mavenProfiles
+    displayName: maven options parameters
+    type: string    
+  - name: mavenPomFile
+    displayName: Maven pom file path
+    type: string
+  - name: mavenGoal
+    displayName: Maven goal
+    type: string
+  - name: continueOnError
+    displayName: Continue on Failure
+    type: string
+    default: false
+  - name: azureServiceConnectionName
+    type: string
+
+steps:
+
+  - task: AzureCLI@2
+    displayName: 'Test execution'
+    continueOnError: ${{ parameters.continueOnError }}
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        echo 'executing test'
+        echo ${{ parameters.mavenOptions }}   
+        echo 'Test profile: '${{ parameters.mavenProfiles }}
+        opts=${{ parameters.mavenOptions }}
+        stripped_opts="${opts:1:${#opts}-2}"      
+        mvn -f ${{ parameters.mavenPomFile }} ${{parameters.mavenGoal}} $stripped_opts -P ${{ parameters.mavenProfiles }}
+      
+  - task: PublishTestResults@2
+    condition: always()
+    inputs:
+      testResultsFormat: 'JUnit'
+      searchFolder: '$(System.DefaultWorkingDirectory)'
+      publishJUnitResults: true
+      testResultsFiles: '**/surefire-reports/TEST-*.xml'
+      codeCoverageToolOption: JaCoCo

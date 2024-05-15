@@ -1,0 +1,39 @@
+{{ if not .Values.vnetPeered }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: HTTPS
+    nginx.ingress.kubernetes.io/configuration-snippet: proxy_ssl_name "airflow.{{ .Release.Namespace }}.cluster.local";
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-ssl-secret: kube-system/osm-ingress-client-cert
+    nginx.ingress.kubernetes.io/proxy-ssl-verify: "on"
+  labels:
+    app: airflow
+    component: web
+    chart: {{ .Chart.Name }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+    {{- if .Values.airflow.ingress.web.labels }}
+    {{- toYaml .Values.ingress.web.labels | nindent 4 }}
+    {{- end }}
+  name: {{ .Release.Name }}-web-localhost
+  namespace: {{ .Release.Namespace }}
+spec:
+  ingressClassName: {{ .Values.airflow.ingress.web.ingressClassName }}
+  rules:
+  - host: localhost
+    http:
+      paths:
+      - backend:
+          service:
+            name: {{ .Release.Name }}-web
+            port:
+              name: web
+        pathType: ImplementationSpecific
+        path: {{ .Values.airflow.ingress.web.path }}
+  tls:
+  - hosts:
+    - localhost
+    secretName: {{ .Values.airflow.ingress.web.tls.secretName }}
+{{ end }}

@@ -1,0 +1,31 @@
+parameters:
+  - name: psqlName
+    displayName: Postgres name
+    type: string
+  - name: resourceGroup
+    displayName: Resource group name
+    type: string
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+  - name: workingDirectory
+    displayName: Azure CLI working directory
+    type: string
+  - name: action
+    displayName: stop / start
+    type: string    
+    values:
+      - start
+      - stop   
+
+steps:
+  - task: AzureCLI@2
+    displayName: ${{ parameters.action }} ${{ parameters.psqlName }}
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        az postgres flexible-server ${{ parameters.action }} --name ${{ parameters.psqlName }} --resource-group ${{ parameters.resourceGroup }} || true
+      workingDirectory: ${{ parameters.workingDirectory }}
+

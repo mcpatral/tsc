@@ -1,0 +1,28 @@
+parameters:
+  - name: ddlGeneratorPath
+    displayName: 'DDL generator path'
+    type: string
+
+  - name: additionalArgsDdlGenerator
+    displayName: 'Additional arguments for DDL generator'
+    type: string
+
+  - name: workingDirectory
+    displayName: 'Working directory'
+    type: string
+
+  - name: condition
+    displayName: 'Run conditions for task'
+    type: string
+    default: ""
+
+steps:
+  - task: Bash@3
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    displayName: 'Generation initial ddls for vertica database'
+    inputs:
+      targetType: 'inline'
+      script: |
+        python3 ${{ parameters.ddlGeneratorPath }} ${{ parameters.additionalArgsDdlGenerator }}
+      workingDirectory: ${{ parameters.workingDirectory }}

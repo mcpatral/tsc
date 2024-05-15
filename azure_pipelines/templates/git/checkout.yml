@@ -1,0 +1,31 @@
+parameters:
+- name: branchName
+  displayName: Branch name
+  type: string
+
+- name: stepDisplayName
+  displayName: Step display name
+  type: string
+
+- name: workingDirectory
+  type: string
+
+- name: condition
+  displayName: Run conditions for task
+  type: string
+  default: ""
+
+steps:
+- task: Bash@3
+  ${{ if ne(parameters.condition, '') }}:
+    condition: ${{ parameters.condition }}
+  displayName: ${{ parameters.stepDisplayName }}
+  inputs:
+    targetType: 'inline'
+    script: |
+      git config --global user.email $(Build.RequestedForEMail)
+      git config --global user.name $(Build.RequestedFor)
+      echo 'Switching to ${{ parameters.branchName }}'
+      git checkout ${{ parameters.branchName }}
+      git pull
+    workingDirectory: '${{ parameters.workingDirectory }}'

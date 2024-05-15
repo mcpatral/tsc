@@ -1,0 +1,93 @@
+parameters:
+- name: deleteToken
+  type: boolean
+  displayName: Delete Token
+- name: azureServiceConnectionName
+  displayName: Azure Service Connection name
+  type: string
+- name: terraformVersion
+  type: string
+- name: terraformResourceGroupName
+  displayName: Resource group for TF
+  type: string
+- name: terraformSaName
+  displayName: Storage Account name for TF
+  type: string
+- name: terraformBackendContainerName
+  displayName: Container name for TF
+  type: string  
+- name: pool
+  displayName: Agent pool to run the jobs.
+  type: string
+- name: resourceGroupName
+  displayName: Resource Group Name
+  type: string
+- name: databricksPatTokenName
+  type: string
+  displayName: Key Vault Secret Name for the Token value
+- name: dependsOn
+  type: object
+  default: []
+- name: stageName
+  type: string
+  displayName: Stage Name
+- name: stageDisplayName
+  type: string
+  displayName: Stage Display Name
+# With defaults:
+- name: keyVaultName
+  displayName: Key Vault Name
+  type: string
+  default: null
+- name: lifetimeSeconds
+  displayName: Databricks Token Lifetime Seconds
+  type: number
+  default: 7776000
+- name: databricksPatTokenId
+  type: string
+  displayName: Key Vault Secret Name for the Token id
+- name: removeTheRestOfTokens
+  displayName: Remove the rest of tokens
+  type: boolean
+  default: false
+- name: infrastructureModule
+  displayName: Infrastructure module name
+  type: string
+
+stages:
+- stage: ${{ parameters.stageName }}
+  dependsOn: ${{ parameters.dependsOn }}
+  variables:
+    ${{ if eq(parameters['deleteToken'],false) }}:
+      tokenIdToDelete: 'none'
+      tokenIdToKeep: 'none'
+    ${{ if eq(parameters['deleteToken'],true) }}:
+      tokenIdToDelete: $[ stageDependencies.rotate_token.rotateTokenJob.outputs['outputPreviousTokenId.token_id_to_delete'] ]
+      tokenIdToKeep: $[ stageDependencies.rotate_token.rotateTokenJob.outputs['tokens_create.token_id_output'] ]
+  displayName: ${{ parameters.stagedisplayName }}
+  jobs:
+  - job: rotateTokenJob
+    displayName: Rotate token job
+    pool:
+      ${{ if ne(parameters.pool, 'ubuntu-latest') }}:
+        name: ${{ parameters.pool }}
+      ${{ if eq(parameters.pool, 'ubuntu-latest') }}:
+        vmImage: ${{ parameters.pool }}
+    steps:
+    - template: templates/rotate-databricks-token-steps.yml
+      parameters:
+        azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+        terraformVersion: ${{ parameters.terraformVersion }}
+        terraformResourceGroupName: ${{ parameters.terraformResourceGroupName }}
+        terraformSaName: ${{ parameters.terraformSaName }}
+        terraformBackendContainerName: ${{ parameters.terraformBackendContainerName }}
+        deleteToken: ${{ parameters.deleteToken }}
+        removeTheRestOfTokens: ${{ parameters.removeTheRestOfTokens }}
+        resourceGroupName: ${{ parameters.resourceGroupName }}
+        keyVaultName: ${{ parameters.keyVaultName }}
+        infrastructureModule: ${{ parameters.infrastructureModule }}
+        lifetimeSeconds: ${{ parameters.lifetimeSeconds }}
+        databricksPatTokenName: ${{ parameters.databricksPatTokenName }}
+        databricksPatTokenId: ${{ parameters.databricksPatTokenId }}
+        databricksTokenIdToDelete: $(tokenIdToDelete)
+        databricksTokenIdToKeep: $(tokenIdToKeep)

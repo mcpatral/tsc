@@ -1,0 +1,59 @@
+parameters:
+  - name: kvName
+    displayName: Key Vault name
+    type: string
+  # NOTE: To enable access only for selected networks, set publicAccess to Enabled and defaultAction to Deny
+  # To enable access for all networks, set publicAccess to Enabled and defaultAction to Allow
+  # To disable access, set publicAccess to Disabled and defaultAction value will be ignored
+  - name: defaultAction
+    displayName: Default action to apply when no rule matches
+    type: string
+    default: Deny
+    values:
+      - Allow
+      - Deny
+  - name: publicAccess
+    displayName: Action to do with public network access
+    values:
+      - Enabled
+      - Disabled
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+  - name: workingDirectory
+    displayName: Azure CLI working directory
+    type: string
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+  - name: waitAfterUpdate
+    displayName: Wait for 30 seconds after update
+    type: boolean
+    default: false
+  - name: resourceGroupName
+    displayName: Resource group name
+    type: string
+ 
+steps:
+  - task: AzureCLI@2
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    displayName: ${{ parameters.publicAccess }} public access for KV
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        echo "Default action to set if rule don't match - ${{ parameters.defaultAction }}"
+        az keyvault update --default-action ${{ parameters.defaultAction }} --public-network-access ${{ parameters.publicAccess }} \
+        --name ${{ parameters.kvName }} --resource-group ${{ parameters.resourceGroupName }} --query "publicNetworkAccess"
+        echo "##vso[task.setvariable variable=updatedKvAccess]true"
+      workingDirectory: ${{ parameters.workingDirectory }}
+
+  - ${{ if parameters.waitAfterUpdate }}:
+    - template: ../utils/timeout.yml
+      parameters:
+        secondsToWait: "30" # Waiting for rules to be applied
+        workingDirectory: $(System.DefaultWorkingDirectory)
+        condition: ${{ parameters.condition }}

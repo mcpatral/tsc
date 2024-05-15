@@ -1,0 +1,16 @@
+parameters:
+  - name: kubectlVersion
+    displayName: Helm Version
+    type: string
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+
+steps:
+  - task: KubectlInstaller@0
+    displayName: Install Kubectl
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    inputs:
+      kubectlVersion: ${{ parameters.kubectlVersion }}

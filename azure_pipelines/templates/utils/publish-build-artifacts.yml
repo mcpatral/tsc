@@ -1,0 +1,13 @@
+parameters:
+  - name: artifactsDirectory
+    type: string
+
+  - name: workingDirectory
+    type: string
+
+steps:
+  - task: PublishBuildArtifacts@1
+    displayName: 'Publish Artifact to ${{ parameters.artifactsDirectory }}'
+    inputs:
+      PathtoPublish: '${{ parameters.workingDirectory }}/dist'
+      ArtifactName: '${{ parameters.artifactsDirectory }}'

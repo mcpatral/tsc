@@ -1,0 +1,47 @@
+parameters:
+  - name: saName
+    displayName: Storage Account name
+    type: string
+  - name: saContainerName
+    displayName: Storage account container name
+    type: string
+  - name: action
+    displayName: Action to do with storage account container
+    default: create
+    values:
+      - create
+      - delete
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+  - name: workingDirectory
+    displayName: Azure CLI working directory
+    type: string
+
+steps:
+  - task: AzureCLI@2
+    displayName: ${{ parameters.action }} container in Storage Account
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        for i in {1..10}
+        do
+          if [ "${{ parameters.action }}" == "create" ]; then
+            az storage container ${{ parameters.action }} -n ${{ parameters.saContainerName }} \
+            --auth-mode login --account-name ${{ parameters.saName }} --timeout 15 \
+            && break || echo "Attempt $i. Failed with $? exit code. Retrying in 5 seconds..."
+            sleep 5
+          fi
+        done
+        if  [ "${{ parameters.action }}" == "delete" ]; then
+          az storage container ${{ parameters.action }} --account-name ${{ parameters.saName }} -n ${{ parameters.saContainerName }} --auth-mode login 
+        fi
+      workingDirectory: ${{ parameters.workingDirectory }}

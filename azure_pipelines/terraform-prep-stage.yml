@@ -1,0 +1,217 @@
+parameters:
+  - name: stageName
+    displayName: Stage Name
+    type: string
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection Name
+    type: string
+  - name: terraformResourceGroupName
+    displayName: Resource group name for terraform SA
+    type: string
+  - name: mainResourceGroupName
+    displayName: Private endpoints resource group name
+    type: string
+  - name: terraformLocation
+    type: string
+  - name: terraformSaName
+    displayName: Storage account name
+    type: string
+  - name: terraformBackendContainerName
+    displayName: Container name for storing states
+    type: string
+  - name: terraformPlanContainerName
+    displayName: Container name for storing plans
+    type: string
+  - name: privatePoolName
+    displayName: Private Pool Name
+    type: string
+  - name: publicPoolName
+    displayName: Public Pool Name
+    type: string
+  - name: azureDevOpsUrl
+    displayName: Azure DevOps Url
+    type: string
+  - name: keyVaultName
+    displayName: Key Vault name
+    type: string
+  - name: acrRepositoryVersion
+    displayName: ACR Repository Version for private agent AKS cluster
+    type: string
+  - name: aksDevOpsClusterName
+    displayName: AKS DevOps Agents Cluster Name
+    type: string
+  - name: destroy
+    displayName: Destroy infra
+    type: boolean
+  - name: destroyTerraformStorageAccount
+    displayName: destroyTerraformStorageAccount
+    type: boolean
+  - name: dependsOn
+    type: object
+    default: []
+  - name: enablersModule
+    displayName: Enablers Module
+    type: string
+  - name: condition
+    displayName: Condition to run the stage
+    type: string
+    default: ""
+
+stages:
+  - stage: ${{ parameters.stageName }}
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    displayName: Pipeline run preparation
+    dependsOn: ${{ parameters.dependsOn }}
+    jobs:
+      - ${{ if eq(parameters.destroy, false) }}:
+        - job: tfCreateBackend
+          displayName: Terraform backend creation 
+          pool:
+            vmImage: ${{ parameters.publicPoolName }}
+          steps:
+            - checkout: none
+
+            - template: templates/azcli/sa-create-delete.yml
+              parameters:
+                azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+                resourceGroupName:  ${{ parameters.terraformResourceGroupName }}
+                saName: ${{ parameters.terraformSaName }}
+                location: ${{ parameters.terraformLocation }}
+                action: create
+                networkAccess: Enabled
+                sku: Standard_GRS
+                allowSharedKeyAccess: false
+                workingDirectory: $(System.DefaultWorkingDirectory)
+
+            - template: templates/azcli/sa-create-delete-container.yml
+              parameters:
+                azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+                saName: ${{ parameters.terraformSaName }}
+                saContainerName: ${{ parameters.terraformBackendContainerName }}
+                action: create
+                workingDirectory: $(System.DefaultWorkingDirectory)
+            
+            - template: templates/azcli/sa-create-delete-container.yml
+              parameters:
+                azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+                saName: ${{ parameters.terraformSaName }}
+                saContainerName: ${{ parameters.terraformPlanContainerName }}
+                action: create
+                workingDirectory: $(System.DefaultWorkingDirectory)
+
+            - template: templates/azcli/az-create-delete-role.yml
+              parameters:
+                azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+                workingDirectory: $(System.DefaultWorkingDirectory)
+                role: "Storage Blob Data Owner"
+                action: "create"
+                resourceGroupName:  ${{ parameters.terraformResourceGroupName }}        
+
+      - ${{ if eq(parameters.destroyTerraformStorageAccount, false) }}:
+        - job: selectPrivatePool
+          displayName: Pool selection
+          ${{ if eq(parameters.destroy, false) }}:
+            dependsOn: tfCreateBackend
+          pool:
+            vmImage: ${{ parameters.publicPoolName }}
+          steps:
+          - checkout: none
+              
+          - template: templates/azcli/create-ado-token.yml
+            parameters:
+              azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+              workingDirectory: $(System.DefaultWorkingDirectory)
+          
+          - template: templates/utils/select-private-pool.yml
+            parameters:
+              privatePoolName: ${{ parameters.privatePoolName }}
+              azureDevOpsUrl: ${{ parameters.azureDevOpsUrl }}
+              azureDevOpsToken: $(azure_devops_access_token)
+
+          - template: templates/azcli/resource-show-property.yml
+            parameters:
+              condition: and(succeeded(), eq(variables.select_private_pool, 'yes'))
+              azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+              resourceName: ${{ parameters.aksDevOpsClusterName }}
+              resourceGroupName: ${{ parameters.mainResourceGroupName }}
+              resourceType: "Microsoft.ContainerService/ManagedClusters"
+              workingDirectory: $(System.DefaultWorkingDirectory)
+              propertyAddress: id
+
+          - template: templates/azcli/tag-list.yml
+            parameters:
+              condition: and(succeeded(), eq(variables.select_private_pool, 'yes'))
+              resourceId: $(resource_property)
+              azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+              workingDirectory: $(System.DefaultWorkingDirectory)
+
+          - task: Bash@3
+            displayName: Enablers pool choice
+            name: poolChoice
+            inputs:
+              targetType: 'inline'
+              script: |
+                echo "Select private pool flag: $(select_private_pool)"
+
+                if [[ $(select_private_pool) == "no" ]]; then
+                  pool_type="public"
+                elif [[ $(select_private_pool) == "yes" ]]; then
+                  echo "Resource tags: $(resource_tags)"
+                  
+                  if [[ '$(resource_tags)' == *"aksContainerImageVersion=${{ parameters.acrRepositoryVersion }}"* ]]; then
+                    pool_type="private"
+                  else
+                    pool_type="public"
+                  fi
+                else
+                  echo "##vso[task.logissue type=error;]Something went wrong during agent pool choosing. Please check output of previous steps."
+                  exit 1
+                fi
+
+                echo "The chosen pool type is $pool_type"
+                echo "##vso[task.setvariable variable=pool_type;isOutput=true]$pool_type"
+           
+      - ${{ if and(eq(parameters.destroy, true), eq(parameters.destroyTerraformStorageAccount, true)) }}:
+        - job: tfDeleteBackend
+          displayName: Terraform backend deletion 
+          pool:
+            vmImage: ${{ parameters.publicPoolName }}
+          steps:
+            - checkout: none
+            - template: templates/azcli/sa-update-public-network-access.yml
+              parameters:
+                azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+                resourceGroupName:  ${{ parameters.terraformResourceGroupName }}
+                workingDirectory: $(System.DefaultWorkingDirectory)
+                saName: ${{ parameters.terraformSaName }}
+                publicAccess: Enabled
+                waitAfterUpdate: true
+                
+            - template: templates/azcli/sa-create-delete-container.yml
+              parameters:
+                azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+                saName: ${{ parameters.terraformSaName }}
+                saContainerName: ${{ parameters.terraformPlanContainerName }}
+                action: delete
+                workingDirectory: $(System.DefaultWorkingDirectory)
+
+            - template: templates/azcli/sa-create-delete-container.yml
+              parameters:
+                azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+                saName: ${{ parameters.terraformSaName }}
+                saContainerName: ${{ parameters.terraformBackendContainerName }}
+                action: delete
+                workingDirectory: $(System.DefaultWorkingDirectory)
+
+            - template: templates/azcli/sa-create-delete.yml
+              parameters:
+                azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+                resourceGroupName:  ${{ parameters.terraformResourceGroupName }}
+                saName: ${{ parameters.terraformSaName }}
+                location: ${{ parameters.terraformLocation }}
+                action: delete
+                networkAccess: Enabled
+                sku: Standard_GRS
+                allowSharedKeyAccess: false
+                workingDirectory: $(System.DefaultWorkingDirectory)

@@ -1,0 +1,33 @@
+parameters:
+  - name: workingDirectory
+    displayName: Docker working directory
+    type: string
+  - name: name
+    displayName: Deployment name
+    type: string    
+  - name: image
+    displayName: Image to use
+    type: string        
+  - name: aksDevOpsNamespace
+    displayName: env name
+    type: string     
+
+steps:
+    - task: Bash@3
+      displayName: Docker agent preparation
+      inputs:
+        targetType: 'inline'
+        script: |
+          STATUS=$(docker buildx create --name ${{ parameters.name }} --driver kubernetes --driver-opt replicas=1,namespace=${{ parameters.aksDevOpsNamespace }},serviceaccount=${{ parameters.aksDevOpsNamespace }}-agent,image=${{ parameters.image }},nodeselector=pool=adoagents --use )
+          if [[ $STATUS == *"existing instance"* ]]; then
+            echo "Already created via other node"
+            exit 0
+          elif [[ $STATUS == *"ERROR:"* ]]; then
+            echo "##vso[task.logissue type=error;]Unknown error in docker agent preparation."
+            echo "$STATUS"
+            exit 1
+          else 
+            echo "OK"
+            echo "$STATUS"
+          fi
+        workingDirectory: ${{ parameters.workingDirectory }}

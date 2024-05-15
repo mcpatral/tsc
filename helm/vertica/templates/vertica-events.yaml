@@ -1,0 +1,46 @@
+{{- range $key, $value := .Values.vertica.eventTriggers }}
+apiVersion: vertica.com/v1beta1
+kind: EventTrigger
+metadata:
+  name: {{ $.Release.Name }}-{{ $key }}
+spec:
+  references:
+    - object:
+        apiVersion: vertica.com/v1beta1
+        kind: VerticaDB
+        name: {{ $.Release.Name }}-{{ $.Release.Namespace }}
+  matches:
+    {{- range $value.conditions }}
+    - condition:
+        type: {{ .type }}
+        status: {{ .status | quote }}
+    {{- end }}
+  template:
+    metadata:
+      generateName: {{ $.Release.Name }}-{{ $key }}-event-
+    spec:
+      template:
+        spec:
+          restartPolicy: {{ $value.template.restartPolicy }}
+          {{- if $value.template.imagePullSecrets }}
+          imagePullSecrets: {{ $value.template.imagePullSecrets }}
+          {{- end }}
+          containers:
+            {{- range $value.template.containers }}
+            - name: {{ .name }}
+              image: {{ .image.repo }}/{{ .image.name }}:{{ .image.tag }}
+              {{- if .command }}
+              command: {{ toJson .command }}
+              {{- end }}
+              {{- if .args }}
+              args: {{ toJson .args }}
+              {{- end }}
+              {{- if .workingDir }}
+              workingDir: {{ .workingDir }}
+              {{- end }}
+              {{- if .image.pullPolicy }}
+              imagePullPolicy: {{ .image.pullPolicy }}
+              {{- end }}
+            {{- end }}
+---
+{{- end }}

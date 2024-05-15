@@ -1,0 +1,41 @@
+parameters:
+  - name: acrName
+    displayName: ACR name
+    type: string
+  - name: acrResourceGroupName
+    displayName: ACR resource group name
+    type: string
+  - name: acrSubscriptionId
+    displayName: ACR subscription ID
+    type: string
+    default: ""
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+  - name: workingDirectory
+    displayName: Azure CLI working directory
+    type: string
+  - name: enabled
+    displayName: enabled or disabled
+    type: boolean    
+
+steps:
+  - task: AzureCLI@2
+    displayName: Disable/Enable ACR public network access
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnectionName }}
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        subscriptionId="${{ parameters.acrSubscriptionId }}"
+        if [[ "$subscriptionId" == "" ]]; then
+          subscriptionId=$(az account show --query "id" --output tsv)
+        fi
+        az acr update --name ${{ parameters.acrName }} --resource-group ${{ parameters.acrResourceGroupName }} --subscription $subscriptionId --public-network-enabled ${{ parameters.enabled }}
+      workingDirectory: ${{ parameters.workingDirectory }}

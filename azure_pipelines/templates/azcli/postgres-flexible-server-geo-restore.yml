@@ -1,0 +1,61 @@
+parameters:
+- name: azureServiceConnectionName
+  displayName: Azure Service Connection name
+  type: string
+- name: workingDirectory
+  displayName: Azure CLI working directory
+  type: string
+- name: resourceGroupName
+  displayName: Resource Group Name
+  type: string
+- name: location
+  displayName: Location
+  type: string
+- name: zone
+  displayName: Zone
+  type: string
+- name: postgresqlServerName
+  displayName: Postgresql Server Name
+  type: string
+- name: postgresqlSourceServerId
+  displayName: Postgresql Source Server Id
+  type: string
+- name: postgresSubnetIDEnvVarName
+  displayName: Postgres Subnet ID environment variable name
+  type: string
+- name: postgresPrivateDnsZoneId
+  displayName: Postgres Private Dns Zone Id
+  type: string
+- name: geoRedundantBackup
+  displayName: Geo Redundant Backup
+  type: string
+- name: condition
+  displayName: Run conditions for task
+  type: string
+  default: ""
+
+steps:
+- task: AzureCLI@2
+  displayName: Create postgresql
+  ${{ if ne(parameters.condition, '') }}:
+    condition: ${{ parameters.condition }}
+  inputs:
+    azureSubscription: ${{ parameters.azureServiceConnectionName }}
+    scriptType: 'bash'
+    scriptLocation: 'inlineScript'
+    inlineScript: |
+      echo "Resource group name: ${{ parameters.resourceGroupName }}"
+      echo "Postgresql server name: ${{ parameters.postgresqlServerName }}"
+      echo "Postgresql source server id: ${{ parameters.postgresqlSourceServerId }}"
+      echo "Postgresql private dns zone id: ${{ parameters.postgresPrivateDnsZoneId }}"
+      subnet_name_underscore=$(echo ${{ parameters.postgresSubnetIDEnvVarName }} | tr '[:lower:]' '[:upper:]' | tr '-' '_')
+      subnet_id=$(eval "echo \$${subnet_name_underscore}")
+      echo "Subnet id: $subnet_id"
+
+      postgresql_resource_id=$(az postgres flexible-server geo-restore --resource-group ${{ parameters.resourceGroupName }} --name ${{ parameters.postgresqlServerName }} --source-server ${{ parameters.postgresqlSourceServerId }} --subnet $subnet_id --private-dns-zone ${{ parameters.postgresPrivateDnsZoneId }} --location ${{ parameters.location }} --geo-redundant-backup ${{ parameters.geoRedundantBackup }} --zone ${{ parameters.zone }} --query 'id' --output tsv)
+      if [[ $? -ne 0 ]]; then
+        echo "##vso[task.logissue type=error;]error creating the postgresql server"
+        exit 1
+      fi
+      echo "##vso[task.setvariable variable=postgresql_resource_id]$postgresql_resource_id"
+    workingDirectory: ${{ parameters.workingDirectory }}

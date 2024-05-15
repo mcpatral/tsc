@@ -1,0 +1,25 @@
+parameters:
+- name: packageFolder
+  type: string
+- name: workingDirectory
+  type: string
+
+- name: condition
+  displayName: Run conditions for task
+  type: string
+  default: ""
+
+steps:
+  - task: Bash@3
+    displayName: 'Prepare package for upload'
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    inputs:
+      targetType: 'inline'
+      script: |
+        find . -type d -name __pycache__ -exec rm -r {} \+
+        echo "=============================================================================="
+        echo "Package list for upload:"
+        echo "=============================================================================="
+        ls -la ${{ parameters.workingDirectory }}/${{ parameters.packageFolder }}
+      workingDirectory: ${{ parameters.workingDirectory }}/${{ parameters.packageFolder }}

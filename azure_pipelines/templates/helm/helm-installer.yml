@@ -1,0 +1,16 @@
+parameters:
+  - name: helmVersion
+    displayName: Helm Version
+    type: string
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+
+steps:
+  - task: HelmInstaller@1
+    displayName: Install Helm
+    ${{ if ne(parameters.condition, '') }}:
+      condition: ${{ parameters.condition }}
+    inputs:
+      helmVersionToInstall: ${{ parameters.helmVersion }}

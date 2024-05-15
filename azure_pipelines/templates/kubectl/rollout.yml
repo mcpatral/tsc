@@ -1,0 +1,19 @@
+parameters:
+  - name: objectToCheck
+    displayName: Object to check rollout
+    type: string
+  - name: namespace
+    displayName: Namespace to install templates
+    type: string
+  - name: workingDirectory
+    displayName: Azure CLI working directory
+    type: string
+
+steps:
+  - task: Bash@3
+    displayName: Rollout status check of ${{ parameters.objectToCheck }}
+    inputs:
+      targetType: 'inline'
+      script: |
+        kubectl rollout status ${{ parameters.objectToCheck }} -n ${{ parameters.namespace }}
+      workingDirectory: ${{ parameters.workingDirectory }}

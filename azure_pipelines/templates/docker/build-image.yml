@@ -1,0 +1,20 @@
+parameters:
+  - name: azureServiceConnectionName
+    type: string    
+  - name: registry
+    type: string
+  - name: repositoryName
+    type: string
+  - name: repositoryVersion
+    type: string
+  - name: dockerFilePath
+    type: string
+steps:
+- task: Docker@1
+  displayName: 'Build Docker Image'
+  inputs:
+    azureSubscriptionEndpoint: ${{ parameters.azureServiceConnectionName }}
+    azureContainerRegistry: ${{ parameters.registry }}
+    imageName: ${{ parameters.repositoryName }}:${{ parameters.repositoryVersion }}
+    command: 'Build an image'
+    dockerFile: ${{ parameters.dockerFilePath }}

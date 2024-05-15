@@ -1,0 +1,58 @@
+parameters:
+- name: workingDirectory
+  displayName: Terraform root module directory
+  type: string
+- name: azureServiceConnectionName
+  displayName: Azure Service Connection name
+  type: string
+- name: terraformVersion
+  displayName: Terraform version
+  type: string
+- name: terraformResourceGroupName
+  displayName: Terraform storage account resource group name
+  type: string
+- name: terraformSaName
+  displayName: Terraform backend storage account name
+  type: string
+- name: terraformBackendContainerName
+  displayName: Terraform backend container name
+  type: string
+- name: tfstateTargetResourceAddress
+  displayName: Terraform state target resource address
+  type: string
+  default: null
+- name: resourceName
+  displayName: Resource Name
+  type: string
+  default: null
+- name: resourceGroupName
+  displayName: Resource Group Name
+  type: string
+  default: null
+- name: resourceType
+  displayName: Resource Type
+  type: string
+  default: null
+- name: resourceId
+  displayName: Resource ID
+  type: string
+  default: null
+- name: condition
+  displayName: Condition for tasks
+  type: string
+  default: ""
+
+steps:
+- task: TerraformCLI@0
+  ${{ if ne(parameters.condition, '') }}:
+    condition: ${{ parameters.condition }}
+  displayName: 'Terraform import'
+  timeoutInMinutes: 3
+  inputs:
+    command: 'import'
+    workingDirectory: ${{ parameters.workingDirectory }}
+    resourceAddress: ${{ parameters.tfstateTargetResourceAddress }}
+    resourceId: ${{ parameters.resourceId }}
+    backendType: 'azurerm'
+    environmentServiceName: ${{ parameters.azureServiceConnectionName }}
+    allowTelemetryCollection: false

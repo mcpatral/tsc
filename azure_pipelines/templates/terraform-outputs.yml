@@ -1,0 +1,44 @@
+parameters:
+  - name: terraformVersion
+    displayName: Terraform version to use
+    type: string
+  - name: azureServiceConnectionName
+    displayName: Azure Service Connection name
+    type: string
+  - name: workingDirectory
+    displayName: Terraform root module directory
+    type: string
+  - name: terraformResourceGroupName
+    displayName: Terraform storage account resource group name
+    type: string
+  - name: terraformSaName
+    displayName: Terraform backend storage account name
+    type: string
+  - name: terraformBackendContainerName
+    displayName: Terraform backend container name
+    type: string
+  - name: terraformBackendKeyName
+    displayName: Terraform backend key name
+    type: string
+    default: ""
+  - name: condition
+    displayName: Run conditions for task
+    type: string
+    default: ""
+
+steps:
+  - template: terraform/init.yml
+    parameters:
+      terraformVersion: ${{ parameters.terraformVersion }}
+      workingDirectory: ${{ parameters.workingDirectory }}
+      azureServiceConnectionName: ${{ parameters.azureServiceConnectionName }}
+      terraformResourceGroupName: ${{ parameters.terraformResourceGroupName }}
+      terraformSaName: ${{ parameters.terraformSaName }}
+      terraformBackendContainerName: ${{ parameters.terraformBackendContainerName }}
+      terraformBackendKeyName: ${{ parameters.terraformBackendKeyName }}
+      condition: ${{ parameters.condition }}
+
+  - template: terraform/outputs.yml
+    parameters:
+      workingDirectory: ${{ parameters.workingDirectory }}
+      condition: ${{ parameters.condition }}
