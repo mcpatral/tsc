@@ -7,11 +7,11 @@ locals {
 
   azure_dns_ip      = "168.63.129.16"
   azure_fw_ip       = var.FIREWALL_PUBLIC_IP != null ? ["${var.FIREWALL_PUBLIC_IP}/32"] : []
-  intrum_public_ips = var.VNET_PEERED ? concat(["194.11.129.242/32"], local.azure_fw_ip) : ["194.11.129.242/32"]
-  intrum_vpn_cidrs  = compact(["10.188.0.0/16", "10.64.0.0/16", "10.65.0.0/16", "10.192.0.0/13", "10.208.0.0/12", var.HUB_VNET_CIDR_BLOCK])
+  mcpatral_public_ips = var.VNET_PEERED ? concat(["194.11.129.242/32"], local.azure_fw_ip) : ["194.11.129.242/32"]
+  mcpatral_vpn_cidrs  = compact(["10.188.0.0/16", "10.64.0.0/16", "10.65.0.0/16", "10.192.0.0/13", "10.208.0.0/12", var.HUB_VNET_CIDR_BLOCK])
   authorized_ips = toset(
     compact(
-      concat(local.intrum_public_ips, split(",", var.ADDITIONAL_AUTHORIZED_IPS))
+      concat(local.mcpatral_public_ips, split(",", var.ADDITIONAL_AUTHORIZED_IPS))
     )
   )
 
@@ -20,7 +20,7 @@ locals {
     BusinessApplication  = "Gaia"
     SupportTeam          = var.SUBSCRIPTION_TYPE == "prod" ? "Infrastructure_and_Operations" : "Data_and_Analytics"
     Environment          = var.ENVIRONMENT_TYPE
-    Company              = "Intrum"
+    Company              = "mcpatral"
     BusinessCriticallity = var.SUBSCRIPTION_TYPE == "prod" ? "High" : "Low"
     Project              = var.PROJECT
     CostCentre           = "Common"

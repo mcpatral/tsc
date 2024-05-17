@@ -14,10 +14,10 @@ locals {
   enablers_tfstate_output = data.terraform_remote_state.enablers.outputs
 
   azure_fw_ip       = var.FIREWALL_PUBLIC_IP != null ? ["${var.FIREWALL_PUBLIC_IP}/32"] : []
-  intrum_public_ips = var.VNET_PEERED ? concat(["194.11.129.242/32"], local.azure_fw_ip) : ["194.11.129.242/32"]
+  mcpatral_public_ips = var.VNET_PEERED ? concat(["194.11.129.242/32"], local.azure_fw_ip) : ["194.11.129.242/32"]
   authorized_ips = toset(
     compact(
-      concat(local.intrum_public_ips, split(",", var.ADDITIONAL_AUTHORIZED_IPS), ["${local.enablers_tfstate_output.aks_devops_outbound_ip}/32"])
+      concat(local.mcpatral_public_ips, split(",", var.ADDITIONAL_AUTHORIZED_IPS), ["${local.enablers_tfstate_output.aks_devops_outbound_ip}/32"])
     )
   )
 
@@ -32,7 +32,7 @@ locals {
     BusinessApplication  = "Gaia"
     SupportTeam          = var.SUBSCRIPTION_TYPE == "prod" ? "Infrastructure_and_Operations" : "Data_and_Analytics"
     Environment          = var.ENVIRONMENT_TYPE
-    Company              = "Intrum"
+    Company              = "mcpatral"
     BusinessCriticallity = var.SUBSCRIPTION_TYPE == "prod" ? "High" : "Low"
     Project              = var.PROJECT
     CostCentre           = "Common"

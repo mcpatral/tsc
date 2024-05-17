@@ -1,7 +1,7 @@
 locals {
   nsg_tags = {}
 
-  inbound_intrum_vpn_rules = var.VNET_PEERED ? { for index, value in local.intrum_vpn_cidrs : "AllowVPN${index}HTTPS" => {
+  inbound_mcpatral_vpn_rules = var.VNET_PEERED ? { for index, value in local.mcpatral_vpn_cidrs : "AllowVPN${index}HTTPS" => {
     access             = "Allow",
     priority           = tonumber("17${index}"),
     protocol           = "Tcp",
@@ -80,7 +80,7 @@ locals {
         src_address_prefix = "*",
         dst_address_prefix = "*",
       }
-    }, local.inbound_intrum_vpn_rules)
+    }, local.inbound_mcpatral_vpn_rules)
 
     "${local.subnet_key_names.devops}" = merge({
       "InAllowAllInternal" = {
@@ -123,7 +123,7 @@ locals {
         src_address_prefix = "*",
         dst_address_prefix = "*",
       }
-    }, local.inbound_intrum_vpn_rules)
+    }, local.inbound_mcpatral_vpn_rules)
 
     "${local.subnet_key_names.postgres}" = {
       "InAllowAKSMainInbound" = {

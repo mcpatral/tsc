@@ -37,7 +37,7 @@ locals {
   }
 
   private_dns_zones_hub = {
-    intrum = {
+    mcpatral = {
       name = var.ENVIRONMENT_DNS_ZONE_NAME
       tags = {}
     }

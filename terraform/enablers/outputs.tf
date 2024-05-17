@@ -96,9 +96,9 @@ output "postgresql_cidr" {
   value       = var.SUBNET_POSTGRES_CIDR
 }
 
-output "intrum_vpn_cidrs" {
-  description = "Intrum VPN subnet CIDR"
-  value       = { for index, value in local.intrum_vpn_cidrs : "rule${index}" => value }
+output "mcpatral_vpn_cidrs" {
+  description = "mcpatral VPN subnet CIDR"
+  value       = { for index, value in local.mcpatral_vpn_cidrs : "rule${index}" => value }
 }
 
 output "azurerm_monitor_workspace_id" {
