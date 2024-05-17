@@ -1,2 +1,0 @@
-#!/usr/bin/env bash
-AZ_INSTALLER=DEB python -Im azure.cli "$@"
