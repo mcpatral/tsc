@@ -1,8 +1,0 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: connections-configmap
-data:
-  airflow_dbwconnection_host: "{{ .Values.airflow_dbwconnection_host }}"
-  airflow_sa_temp_account: "{{ .Values.airflow_sa_temp_account }}"
-  airflow_sa_dl_account: "{{ .Values.airflow_sa_dl_account }}"

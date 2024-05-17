@@ -1,6 +1,0 @@
-dependencies:
-- name: ingress-nginx
-  repository: oci://acrdevdaweucentralmanual.azurecr.io/charts
-  version: 4.8.3
-digest: sha256:56f6a76b95951adffe185f07790f2eb6fa36a3120f75346b2b7554ce94fbac34
-generated: "2023-10-31T12:24:15.912974634+02:00"
